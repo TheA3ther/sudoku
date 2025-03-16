@@ -1,36 +1,55 @@
 import pygame
 from sys import exit
 from sprites import Button
+from states.menu import MenuState
+from states.playing import PlayingState
 
-# initialize pygame
-pygame.init()
+class Game:
+    def __init__(self):
+        # initialize pygame
+        pygame.init()
 
-# initialize screen size
-screen = pygame.display.set_mode((1280, 720)) 
+        # initialize screen size
+        self.screen = pygame.display.set_mode((1280, 720)) 
 
-# initialize font
-font = pygame.font.Font(None, 36)
+        # initialize clock
+        self.clock = pygame.time.Clock()
 
-# onclick func
-def on_click():
-    print("Button Clicked!")
+        # initialize font
+        font = pygame.font.Font(None, 36)
 
-# button
-button = Button(200, 150, 200, 50, (0, 0, 0), "Click Me", font, (0, 0, 0), on_click)
+        # state management
+        self.states = {
+            "menu": MenuState(self),
+            "playing": PlayingState(self)
+        }
+        self.current_state = self.states["menu"]
 
-running = True
+    def change_state(self, new_state):
+        self.current_state = self.states[new_state]
 
-# game loop
-while running:
-    screen.fill("White")
+    def run(self):
+        running = True
 
-    #event handler
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            pygame.quit()
-            exit()
-        button.handle_event(event)
-            
-    # update frame
-    button.draw(screen)
-    pygame.display.update()
+        # game loop
+        while running:
+
+            #event handler
+            events = pygame.event.get()
+            for event in events:
+                # quit game
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    exit()
+
+                self.current_state.handle_events(events)
+                self.current_state.update()
+                self.current_state.draw(self.screen)
+                        
+            # update frame
+            pygame.display.update()
+            self.clock.tick(30)
+
+if __name__ == "__main__":
+    game = Game()
+    game.run()

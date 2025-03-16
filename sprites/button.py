@@ -8,10 +8,8 @@ class Button:
         self.font = font
         self.text_color = text_color
         self.action = action
-        self.width = 5
-        self.border_radius = 5
-
-        print("button initialized")
+        self.width = 3
+        self.border_radius = 10
 
     def draw(self, screen):
         pygame.draw.rect(screen, self.color, self.rect, self.width, self.border_radius)
