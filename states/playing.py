@@ -1,5 +1,5 @@
 import pygame
-from states.state import GameState
+from .state import GameState
 
 class PlayingState(GameState):
     def handle_events(self, events):

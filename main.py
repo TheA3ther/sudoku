@@ -1,8 +1,6 @@
 import pygame
 from sys import exit
-from sprites import Button
-from states.menu import MenuState
-from states.playing import PlayingState
+from states import MenuState, PlayingState
 
 class Game:
     def __init__(self):
@@ -16,7 +14,7 @@ class Game:
         self.clock = pygame.time.Clock()
 
         # initialize font
-        font = pygame.font.Font(None, 36)
+        self.font = pygame.font.Font(None, 36)
 
         # state management
         self.states = {
@@ -28,23 +26,28 @@ class Game:
     def change_state(self, new_state):
         self.current_state = self.states[new_state]
 
+    def quit(*args):
+        pygame.quit()
+        exit()
+
     def run(self):
         running = True
 
-        # game loop
         while running:
-
-            #event handler
+            # get event list
             events = pygame.event.get()
+
+            # general event handler
             for event in events:
                 # quit game
                 if event.type == pygame.QUIT:
-                    pygame.quit()
-                    exit()
+                    print("bye")
+                    self.quit()
 
-                self.current_state.handle_events(events)
-                self.current_state.update()
-                self.current_state.draw(self.screen)
+            # run current_state funcs
+            self.current_state.handle_events(events)
+            self.current_state.update()
+            self.current_state.draw(self.screen)
                         
             # update frame
             pygame.display.update()

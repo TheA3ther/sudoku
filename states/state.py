@@ -1,3 +1,5 @@
+from ui import Button
+
 class GameState:
     def __init__(self, game):
         self.game = game  # Reference to main game class
