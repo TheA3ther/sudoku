@@ -19,6 +19,7 @@ class Game:
 
         # initialize font
         self.font = pygame.font.Font(None, 36)
+        self.board_font = pygame.font.Font(None, 56)
         self.title_font = pygame.font.Font(None, 144)
 
         # initialize theme
