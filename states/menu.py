@@ -6,16 +6,20 @@ class MenuState(GameState):
     def __init__(self, game):
         super().__init__(game)
         font = game.font
-        self.bg_color = (255, 255, 255)
-        self.border_color = (0, 0, 0)
-        self.text_color = (0, 0, 0)
+        title_font = game.title_font
+        self.border_color = self.game.theme["border"]
+        self.text_color = self.game.theme["text"]
+
+        # Getting screen dimensions
+        screen_width = pygame.display.get_surface().get_width()
+        screen_height = pygame.display.get_surface().get_height()
 
         # Title
-        self.title = Text(150, 50, "Sudoku", font, self.text_color)
+        self.title = Text(screen_width/2, 200, "Sudoku", title_font, self.text_color)
 
         # Buttons
-        self.play_button = Button(200, 150, 200, 50, self.border_color, "Play", font, self.text_color, lambda: game.change_state("playing"))
-        self.quit_button = Button(200, 220, 200, 50, self.border_color, "Quit", font, self.text_color, game.quit)
+        self.play_button = Button(screen_width/2, 450, 200, 50, self.border_color, "Play", font, self.text_color, lambda: game.change_state("playing"))
+        self.quit_button = Button(screen_width/2, 525, 200, 50, self.border_color, "Quit", font, self.text_color, game.quit)
 
         self.elements = [self.title, self.play_button, self.quit_button]
 
@@ -32,6 +36,9 @@ class MenuState(GameState):
         pass
 
     def draw(self, screen):
-        screen.fill(self.bg_color)
+        screen.fill(self.game.theme["bg"])
         for element in self.elements:
+            element.text_color = self.game.theme["text"]  # Update text color
+            if isinstance(element, Button):
+                element.color = self.game.theme["border"]  # Update button border
             element.draw(screen)
