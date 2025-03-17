@@ -10,6 +10,8 @@ class Cell:
         self.game = game  # Reference to the game for theme access
         self.blink_timer = 0  # Timer for blinking effect
         self.show_border = True  # Toggle for blinking effect
+        self.highlighted = False  # To track if the cell is highlighted
+        self.same_number = False
 
         # Calculate position on screen with offset
         self.x = offset_x + col * size
@@ -19,8 +21,13 @@ class Cell:
         theme = self.game.theme
         rect = pygame.Rect(self.x, self.y, self.size, self.size)
         
-        # Draw cell background
-        pygame.draw.rect(screen, theme["bg"], rect)
+        # Draw highlighted background if the cell is highlighted
+        if self.same_number or selected:
+            pygame.draw.rect(screen, (90, 90, 90), rect)  # Dark grey background for same numbered cells
+        elif self.highlighted:
+            pygame.draw.rect(screen, (180, 180, 180), rect)  # Grey background for highlighted cells
+        else:
+            pygame.draw.rect(screen, theme["bg"], rect)
         
         # Draw thin border
         pygame.draw.rect(screen, theme["border"], rect, 1)
