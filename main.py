@@ -1,7 +1,7 @@
 import pygame
 from sys import exit
 from states import MenuState, PlayingState
-
+from logic import SudokuLogic
 
 LIGHT_MODE = {"bg": (255, 255, 255), "border": (0, 0, 0), "text": (0, 0, 0)}
 DARK_MODE = {"bg": (0, 0, 0), "border": (255, 255, 255), "text": (255, 255, 255)}
@@ -24,6 +24,9 @@ class Game:
 
         # initialize theme
         self.theme = LIGHT_MODE
+
+        # initialize game logic
+        self.logic = SudokuLogic()
 
         # state management
         self.states = {
@@ -58,7 +61,6 @@ class Game:
                     self.quit()
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_t:
                     self.toggle_theme()
-
 
             # run current_state funcs
             self.current_state.handle_events(events)

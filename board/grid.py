@@ -1,22 +1,26 @@
 import pygame
-from board import Cell
+from .cell import Cell
 
 class Grid:
     def __init__(self, grid_size, game):
-        self.grid_size = grid_size  # 9 (for 9x9 Sudoku)
-        self.game = game  # Reference to the game for theme access
+        self.grid_size = grid_size
+        self.game = game
         
-        # Calculate cell size based on available screen space
         screen_width, screen_height = game.screen.get_size()
-        grid_height = int(screen_height * 0.8)  # Use 80% of screen height
-        self.cell_size = grid_height // grid_size  # Calculate cell size dynamically
-        
-        # Calculate center position
+        grid_height = int(screen_height * 0.8)
+        self.cell_size = grid_height // grid_size
         self.offset_x = (screen_width - grid_size * self.cell_size) // 2
         self.offset_y = (screen_height - grid_height) // 2
 
-        self.cells = [[Cell(r, c, self.cell_size, self.offset_x, self.offset_y, game) for c in range(grid_size)] for r in range(grid_size)]
-        self.selected_cell = None  # Currently selected cell
+        self.cells = [[Cell(r, c, self.cell_size, self.offset_x, self.offset_y, game) 
+                      for c in range(grid_size)] for r in range(grid_size)]
+        self.selected_cell = None
+        self.initialize_grid()
+
+    def initialize_grid(self):
+        for r in range(self.grid_size):
+            for c in range(self.grid_size):
+                self.cells[r][c].value = self.game.logic.puzzle_grid[r][c] if self.game.logic.puzzle_grid[r][c] != 0 else None
 
     def draw(self, screen, font):
         theme = self.game.theme
@@ -26,63 +30,59 @@ class Grid:
             for cell in row:
                 cell.draw(screen, font, cell == self.selected_cell)
 
-        # Draw thick 3x3 subgrid borders
+        # Draw thick borders for 3x3 boxes
         for i in range(0, self.grid_size + 1, 3):
-            thickness = 5
-            pygame.draw.line(screen, theme["border"], (self.offset_x + i * self.cell_size, self.offset_y), (self.offset_x + i * self.cell_size, self.offset_y + self.grid_size * self.cell_size), thickness)
-            pygame.draw.line(screen, theme["border"], (self.offset_x, self.offset_y + i * self.cell_size), (self.offset_x + self.grid_size * self.cell_size, self.offset_y + i * self.cell_size), thickness)
+            thickness = 3
+            pygame.draw.line(screen, theme["border"], 
+                           (self.offset_x + i * self.cell_size, self.offset_y),
+                           (self.offset_x + i * self.cell_size, self.offset_y + self.grid_size * self.cell_size),
+                           thickness)
+            pygame.draw.line(screen, theme["border"],
+                           (self.offset_x, self.offset_y + i * self.cell_size),
+                           (self.offset_x + self.grid_size * self.cell_size, self.offset_y + i * self.cell_size),
+                           thickness)
 
     def update(self):
-        if self.selected_cell:
-            self.selected_cell.update(True)
+        for row in self.cells:
+            for cell in row:
+                cell.update()
 
     def handle_click(self, mouse_pos):
-        # Check if click is inside the grid bounds
-        grid_rect = pygame.Rect(self.offset_x, self.offset_y, self.grid_size * self.cell_size, self.grid_size * self.cell_size)
+        grid_rect = pygame.Rect(self.offset_x, self.offset_y, 
+                               self.grid_size * self.cell_size, 
+                               self.grid_size * self.cell_size)
 
         if grid_rect.collidepoint(mouse_pos):
-            # Clicked inside the grid, select the cell and highlight related ones
             for row in self.cells:
                 for cell in row:
-                    rect = pygame.Rect(cell.x, cell.y, cell.size, cell.size)
-                    if rect.collidepoint(mouse_pos):
+                    if pygame.Rect(cell.x, cell.y, cell.size, cell.size).collidepoint(mouse_pos):
                         self.selected_cell = cell
-                        self.highlight_cells()  # Highlight cells as needed
+                        self.highlight_cells()
                         return
-        else:
-            # Clicked outside the grid, unhighlight everything
-            self.selected_cell = None  # Deselect the cell
-            for row in self.cells:
-                for cell in row:
-                    cell.highlighted = False
-                    cell.same_number = False
+        self.selected_cell = None
+        self.clear_highlights()
 
     def highlight_cells(self):
-        # Reset all cells' highlighted status
+        self.clear_highlights()
+        if not self.selected_cell or self.selected_cell.value is None:
+            return
+            
+        selected_value = self.selected_cell.value
+        for row in self.cells:
+            for cell in row:
+                # Highlight row, column and box
+                if (cell.row == self.selected_cell.row or 
+                    cell.col == self.selected_cell.col or
+                    (cell.row // 3 == self.selected_cell.row // 3 and 
+                     cell.col // 3 == self.selected_cell.col // 3)):
+                    cell.highlighted = True
+                
+                # Highlight same numbers
+                if cell.value == selected_value:
+                    cell.same_number = True
+
+    def clear_highlights(self):
         for row in self.cells:
             for cell in row:
                 cell.highlighted = False
                 cell.same_number = False
-        
-        # Highlight all cells in the same row, column, and subgrid as the selected cell
-        selected_row, selected_col = self.selected_cell.row, self.selected_cell.col
-        selected_value = self.selected_cell.value
-        
-        # Highlight row and column
-        for i in range(self.grid_size):
-            self.cells[selected_row][i].highlighted = True  # Highlight entire row
-            self.cells[i][selected_col].highlighted = True  # Highlight entire column
-        
-        # Highlight subgrid (3x3 block)
-        subgrid_start_row = (selected_row // 3) * 3
-        subgrid_start_col = (selected_col // 3) * 3
-        for r in range(subgrid_start_row, subgrid_start_row + 3):
-            for c in range(subgrid_start_col, subgrid_start_col + 3):
-                self.cells[r][c].highlighted = True
-        
-        # Highlight cells with the same value as the selected cell
-        if selected_value is not None:
-            for row in self.cells:
-                for cell in row:
-                    if cell.value == selected_value:
-                        cell.same_number = True

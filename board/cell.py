@@ -1,19 +1,16 @@
 import pygame
-from random import randint
 
 class Cell:
     def __init__(self, row, col, size, offset_x, offset_y, game):
         self.row = row
         self.col = col
-        self.size = size  # Width/height of the cell
-        self.value = None  # The number inside the cell (None if empty)
-        self.game = game  # Reference to the game for theme access
-        self.blink_timer = 0  # Timer for blinking effect
-        self.show_border = True  # Toggle for blinking effect
-        self.highlighted = False  # To track if the cell is highlighted
+        self.size = size
+        self.value = None
+        self.game = game
+        self.temp_wrong = False
+        self.wrong_timer = 0
+        self.highlighted = False
         self.same_number = False
-
-        # Calculate position on screen with offset
         self.x = offset_x + col * size
         self.y = offset_y + row * size
 
@@ -21,35 +18,50 @@ class Cell:
         theme = self.game.theme
         rect = pygame.Rect(self.x, self.y, self.size, self.size)
         
-        # Draw highlighted background if the cell is highlighted
-        if self.same_number or selected:
-            pygame.draw.rect(screen, (90, 90, 90), rect)  # Dark grey background for same numbered cells
+        # Background
+        if self.temp_wrong:
+            pygame.draw.rect(screen, (255, 200, 200), rect)  # Light red for wrong moves
+        elif self.same_number or selected:
+            pygame.draw.rect(screen, (90, 90, 90), rect)
         elif self.highlighted:
-            pygame.draw.rect(screen, (180, 180, 180), rect)  # Grey background for highlighted cells
+            pygame.draw.rect(screen, (180, 180, 180), rect)
         else:
             pygame.draw.rect(screen, theme["bg"], rect)
         
-        # Draw thin border
-        pygame.draw.rect(screen, theme["border"], rect, 1)
+        # Border
+        border_color = (255, 0, 0) if self.temp_wrong else theme["border"]
+        pygame.draw.rect(screen, border_color, rect, 1)
         
-        # Draw the value if it's not empty
+        # Value
         if self.value is not None:
-            text_surface = font.render(str(self.value), True, theme["text"])
-            text_rect = text_surface.get_rect(center=(self.x + self.size // 2, self.y + self.size // 2))
+            text_color = (255, 0, 0) if self.temp_wrong else theme["text"]
+            text_surface = font.render(str(self.value), True, text_color)
+            text_rect = text_surface.get_rect(center=(self.x + self.size//2, self.y + self.size//2))
             screen.blit(text_surface, text_rect)
         
-        # Highlight if selected (blinking effect)
-        if selected and self.show_border:
-            highlight_color = (100, 149, 237)  # Cornflower Blue
-            pygame.draw.rect(screen, highlight_color, rect, 7)  # Highlight over everything
-
-    def update(self, selected):
+        # Selection highlight
         if selected:
-            self.blink_timer += 1
-            if self.blink_timer % 30 == 0:  # Toggle every 30 frames
-                self.show_border = not self.show_border
+            pygame.draw.rect(screen, (100, 149, 237), rect, 3)
+
+    def update(self):
+        if self.temp_wrong:
+            self.wrong_timer += 1
+            if self.wrong_timer > 30:  # Show wrong move for 30 frames
+                self.temp_wrong = False
+                self.wrong_timer = 0
 
     def handle_keypress(self, key):
         if pygame.K_1 <= key <= pygame.K_9 or pygame.K_KP1 <= key <= pygame.K_KP9:
-            self.value = int(pygame.key.name(key))
-            print(f"Number {self.value} entered, check if it's correct!")
+            num = int(pygame.key.name(key))
+            if self.game.logic.check_move(self.row, self.col, num):
+                self.value = num
+                self.game.logic.user_grid[self.row][self.col] = num
+                self.game.logic.moves_made += 1
+            else:
+                self.value = num
+                self.temp_wrong = True
+                self.game.logic.user_grid[self.row][self.col] = num
+                self.game.logic.moves_made += 1
+        elif key == pygame.K_BACKSPACE:
+            self.value = None
+            self.game.logic.user_grid[self.row][self.col] = 0
