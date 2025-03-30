@@ -3,6 +3,8 @@ import time
 import csv
 import os
 from datetime import datetime
+from sklearn.cluster import KMeans
+import numpy as np
 
 class DataLogger:
     def __init__(self):
@@ -15,17 +17,17 @@ class DataLogger:
                 writer = csv.writer(file)
                 writer.writerow([
                     "timestamp", "game_id", "provided_numbers", 
-                    "density", "completion_time", "result", "mistakes", "moves"
+                    "difficulty", "completion_time", "result", "mistakes", "moves"
                 ])
     
-    def log_game_result(self, game_id, provided_numbers, density, completion_time, result, mistakes, moves):
+    def log_game_result(self, game_id, provided_numbers, difficulty, completion_time, result, mistakes, moves):
         with open(self.csv_file, 'a', newline='') as file:
             writer = csv.writer(file)
             writer.writerow([
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 game_id,
                 provided_numbers,
-                density,
+                difficulty,
                 completion_time,
                 result,
                 mistakes,
@@ -46,27 +48,35 @@ class SudokuLogic:
         self.game_over_time = None
         self.current_game_index = 0
         
+        # 20 games with maximum 30-32 clues
         self.baseline_games = [
-            {"game_id": 1, "provided_numbers": 25, "density": 0.4},
-            {"game_id": 2, "provided_numbers": 30, "density": 0.5},
-            {"game_id": 3, "provided_numbers": 35, "density": 0.6},
-            {"game_id": 4, "provided_numbers": 40, "density": 0.45},
-            {"game_id": 5, "provided_numbers": 28, "density": 0.42},
-            {"game_id": 6, "provided_numbers": 32, "density": 0.48},
-            {"game_id": 7, "provided_numbers": 37, "density": 0.55},
-            {"game_id": 8, "provided_numbers": 42, "density": 0.50},
-            {"game_id": 9, "provided_numbers": 26, "density": 0.43},
-            {"game_id": 10, "provided_numbers": 33, "density": 0.49},
-            {"game_id": 11, "provided_numbers": 38, "density": 0.56},
-            {"game_id": 12, "provided_numbers": 44, "density": 0.52},
-            {"game_id": 13, "provided_numbers": 27, "density": 0.44},
-            {"game_id": 14, "provided_numbers": 34, "density": 0.47},
-            {"game_id": 15, "provided_numbers": 39, "density": 0.53},
-            {"game_id": 16, "provided_numbers": 45, "density": 0.58},
-            {"game_id": 17, "provided_numbers": 29, "density": 0.41},
-            {"game_id": 18, "provided_numbers": 31, "density": 0.46},
-            {"game_id": 19, "provided_numbers": 36, "density": 0.51},
-            {"game_id": 20, "provided_numbers": 41, "density": 0.57},
+            # Beginner (5 games)
+            {"game_id": 1, "provided_numbers": 32, "clusters": 1, "spread": 0.9, "label": "Beginner"},
+            {"game_id": 2, "provided_numbers": 32, "clusters": 1, "spread": 0.85, "label": "Beginner"},
+            {"game_id": 3, "provided_numbers": 31, "clusters": 1, "spread": 0.8, "label": "Beginner"},
+            {"game_id": 4, "provided_numbers": 31, "clusters": 1, "spread": 0.75, "label": "Beginner"},
+            {"game_id": 5, "provided_numbers": 30, "clusters": 1, "spread": 0.7, "label": "Beginner"},
+            
+            # Intermediate (5 games)
+            {"game_id": 6, "provided_numbers": 30, "clusters": 2, "spread": 0.8, "label": "Intermediate"},
+            {"game_id": 7, "provided_numbers": 29, "clusters": 2, "spread": 0.75, "label": "Intermediate"},
+            {"game_id": 8, "provided_numbers": 28, "clusters": 2, "spread": 0.7, "label": "Intermediate"},
+            {"game_id": 9, "provided_numbers": 27, "clusters": 2, "spread": 0.65, "label": "Intermediate"},
+            {"game_id": 10, "provided_numbers": 26, "clusters": 2, "spread": 0.6, "label": "Intermediate"},
+            
+            # Advanced (5 games)
+            {"game_id": 11, "provided_numbers": 25, "clusters": 3, "spread": 0.7, "label": "Advanced"},
+            {"game_id": 12, "provided_numbers": 24, "clusters": 3, "spread": 0.65, "label": "Advanced"},
+            {"game_id": 13, "provided_numbers": 23, "clusters": 3, "spread": 0.6, "label": "Advanced"},
+            {"game_id": 14, "provided_numbers": 22, "clusters": 3, "spread": 0.55, "label": "Advanced"},
+            {"game_id": 15, "provided_numbers": 21, "clusters": 3, "spread": 0.5, "label": "Advanced"},
+            
+            # Expert (5 games)
+            {"game_id": 16, "provided_numbers": 20, "clusters": 4, "spread": 0.6, "label": "Expert"},
+            {"game_id": 17, "provided_numbers": 19, "clusters": 4, "spread": 0.55, "label": "Expert"},
+            {"game_id": 18, "provided_numbers": 18, "clusters": 4, "spread": 0.5, "label": "Expert"},
+            {"game_id": 19, "provided_numbers": 17, "clusters": 4, "spread": 0.45, "label": "Expert"},
+            {"game_id": 20, "provided_numbers": 16, "clusters": 4, "spread": 0.4, "label": "Expert"}
         ]
         
         self.data_logger = DataLogger()
@@ -105,25 +115,54 @@ class SudokuLogic:
         fill_grid()
         return grid
     
-    def remove_numbers(self, grid, provided_numbers):
+    def remove_numbers_with_clusters(self, grid, provided_numbers, n_clusters, spread_factor):
         puzzle = [row[:] for row in grid]
         total_cells = self.grid_size * self.grid_size
         numbers_to_remove = total_cells - provided_numbers
-
-        while numbers_to_remove > 0:
-            row, col = random.randint(0, 8), random.randint(0, 8)
-            if puzzle[row][col] != 0:
-                puzzle[row][col] = 0
-                numbers_to_remove -= 1
-
+        
+        # Generate coordinates of all cells
+        coords = np.array([(i, j) for i in range(9) for j in range(9)])
+        
+        # Apply K-means clustering
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+        kmeans.fit(coords)
+        
+        # Get distances to cluster centers
+        distances = kmeans.transform(coords)
+        
+        # Create probability distribution based on distances
+        min_distances = np.min(distances, axis=1)
+        probabilities = 1 / (min_distances + 1e-6)  # Avoid division by zero
+        probabilities = probabilities ** (1/spread_factor)  # Adjust spread
+        probabilities /= probabilities.sum()  # Normalize
+        
+        # Select cells to remove based on probabilities
+        remove_indices = np.random.choice(
+            len(coords), 
+            size=numbers_to_remove, 
+            replace=False, 
+            p=probabilities
+        )
+        
+        for idx in remove_indices:
+            row, col = coords[idx]
+            puzzle[row][col] = 0
+            
         return puzzle
     
     def reset_game(self):
         current_game = self.baseline_games[self.current_game_index]
         provided_numbers = current_game["provided_numbers"]
+        n_clusters = current_game["clusters"]
+        spread = current_game["spread"]
         
         self.full_grid = self.generate_sudoku()
-        self.puzzle_grid = self.remove_numbers(self.full_grid, provided_numbers)
+        self.puzzle_grid = self.remove_numbers_with_clusters(
+            self.full_grid, 
+            provided_numbers,
+            n_clusters,
+            spread
+        )
         self.user_grid = [row[:] for row in self.puzzle_grid]
         self.wrong_cells = set()
         self.mistakes = 0
@@ -156,6 +195,12 @@ class SudokuLogic:
         self.current_game_index = (self.current_game_index + 1) % len(self.baseline_games)
         self.reset_game()
     
+    def set_difficulty(self, level):
+        """Set difficulty level (0-4) where 0 is easiest and 4 is hardest"""
+        if 0 <= level < len(self.baseline_games):
+            self.current_game_index = level
+            self.reset_game()
+    
     def log_game_result(self, result):
         current_game = self.baseline_games[self.current_game_index]
         completion_time = int((self.game_over_time or time.time()) - self.start_time)
@@ -163,7 +208,7 @@ class SudokuLogic:
         self.data_logger.log_game_result(
             game_id=current_game["game_id"],
             provided_numbers=current_game["provided_numbers"],
-            density=current_game["density"],
+            difficulty=current_game["label"],
             completion_time=completion_time,
             result=result,
             mistakes=self.mistakes,

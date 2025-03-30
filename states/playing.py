@@ -12,8 +12,10 @@ class PlayingState(GameState):
         # Game info display
         self.timer_text = Text(50, 50, "Time: 0", self.game.font, self.game.theme["text"])
         self.mistakes_text = Text(50, 80, "Mistakes: 0/3", self.game.font, self.game.theme["text"])
-        self.game_info = Text(50, 110, f"Puzzle: 1/{len(self.game.logic.baseline_games)}", 
+        self.game_info = Text(50, 110, f"Puzzle: {self.game.logic.current_game_index + 1}/{len(self.game.logic.baseline_games)}", 
                             self.game.font, self.game.theme["text"])
+        self.difficulty_text = Text(50, 140, f"Difficulty: {self.game.logic.baseline_games[self.game.logic.current_game_index]['label']}", 
+                                  self.game.font, self.game.theme["text"])
         
         # Buttons
         screen_width = self.game.screen.get_width()
@@ -43,6 +45,7 @@ class PlayingState(GameState):
 
     def update_game_info(self):
         self.game_info.text = f"Puzzle: {self.game.logic.current_game_index + 1}/{len(self.game.logic.baseline_games)}"
+        self.difficulty_text.text = f"Difficulty: {self.game.logic.baseline_games[self.game.logic.current_game_index]['label']}"
 
     def handle_events(self, events):
         for event in events:
@@ -57,18 +60,15 @@ class PlayingState(GameState):
                 for button in [self.hint_button, self.menu_button, self.next_button]:
                     button.handle_event(event)
                 
-                # Check for game completion
                 if self.game.logic.check_completion():
                     self.handle_game_complete()
 
     def update(self):
         self.grid.update()
-        # Update timer
         elapsed = int(time.time() - self.game.logic.start_time)
         self.timer_text.text = f"Time: {elapsed}s"
         self.mistakes_text.text = f"Mistakes: {self.game.logic.mistakes}/3"
         
-        # Check for game over
         if self.game.logic.mistakes >= 3:
             self.handle_game_over()
 
@@ -80,6 +80,7 @@ class PlayingState(GameState):
         self.timer_text.draw(screen)
         self.mistakes_text.draw(screen)
         self.game_info.draw(screen)
+        self.difficulty_text.draw(screen)
         
         # Draw buttons
         self.hint_button.draw(screen)
