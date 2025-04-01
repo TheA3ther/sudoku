@@ -8,7 +8,7 @@ import numpy as np
 
 class DataLogger:
     def __init__(self):
-        self.csv_file = "sudoku_games.csv"
+        self.csv_file = "sudoku_performance.csv"
         self._initialize_csv()
         
     def _initialize_csv(self):
@@ -16,22 +16,29 @@ class DataLogger:
             with open(self.csv_file, 'w', newline='') as file:
                 writer = csv.writer(file)
                 writer.writerow([
-                    "timestamp", "game_id", "provided_numbers", 
-                    "difficulty", "completion_time", "result", "mistakes", "moves"
+                    "timestamp", "game_id", "difficulty_label",
+                    "completion_time", "mistakes", "hints_used", "moves",
+                    "provided_numbers", "n_clusters", "spread_factor",
+                    "result"
                 ])
     
-    def log_game_result(self, game_id, provided_numbers, difficulty, completion_time, result, mistakes, moves):
+    def log_game_data(self, game_id, difficulty_label, completion_time, 
+                     mistakes, hints_used, moves, provided_numbers,
+                     n_clusters, spread_factor, result):
         with open(self.csv_file, 'a', newline='') as file:
             writer = csv.writer(file)
             writer.writerow([
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 game_id,
-                provided_numbers,
-                difficulty,
+                difficulty_label,
                 completion_time,
-                result,
                 mistakes,
-                moves
+                hints_used,
+                moves,
+                provided_numbers,
+                n_clusters,
+                spread_factor,
+                result
             ])
 
 class SudokuLogic:
@@ -43,12 +50,13 @@ class SudokuLogic:
         self.wrong_cells = set()
         self.mistakes = 0
         self.moves_made = 0
+        self.hints_used = 0
         self.start_time = None
         self.hint_cell = None
         self.game_over_time = None
         self.current_game_index = 0
         
-        # 20 games with maximum 30-32 clues
+        # 20 games with difficulty parameters
         self.baseline_games = [
             # Beginner (5 games)
             {"game_id": 1, "provided_numbers": 32, "clusters": 1, "spread": 0.9, "label": "Beginner"},
@@ -167,6 +175,7 @@ class SudokuLogic:
         self.wrong_cells = set()
         self.mistakes = 0
         self.moves_made = 0
+        self.hints_used = 0
         self.hint_cell = None
         self.start_time = time.time()
         self.game_over_time = None
@@ -184,6 +193,7 @@ class SudokuLogic:
         return self.user_grid == self.full_grid
     
     def provide_hint(self):
+        self.hints_used += 1
         empty_cells = [(r, c) for r in range(self.grid_size) for c in range(self.grid_size) if self.user_grid[r][c] == 0]
         if empty_cells:
             self.hint_cell = random.choice(empty_cells)
@@ -205,12 +215,15 @@ class SudokuLogic:
         current_game = self.baseline_games[self.current_game_index]
         completion_time = int((self.game_over_time or time.time()) - self.start_time)
         
-        self.data_logger.log_game_result(
+        self.data_logger.log_game_data(
             game_id=current_game["game_id"],
-            provided_numbers=current_game["provided_numbers"],
-            difficulty=current_game["label"],
+            difficulty_label=current_game["label"],
             completion_time=completion_time,
-            result=result,
             mistakes=self.mistakes,
-            moves=self.moves_made
+            hints_used=self.hints_used,
+            moves=self.moves_made,
+            provided_numbers=current_game["provided_numbers"],
+            n_clusters=current_game["clusters"],
+            spread_factor=current_game["spread"],
+            result=result
         )
