@@ -11,7 +11,7 @@ class PlayingState(GameState):
         
         # Game info display
         self.timer_text = Text(50, 50, "Time: 0", self.game.font, self.game.theme["text"])
-        self.mistakes_text = Text(50, 80, "Mistakes: 0/3", self.game.font, self.game.theme["text"])
+        self.mistakes_text = Text(50, 80, f"Mistakes: 0/{self.game.logic.max_mistakes}", self.game.font, self.game.theme["text"])
         self.game_info = Text(50, 110, f"Puzzle: {self.game.logic.current_game_index + 1}/{len(self.game.logic.baseline_games)}", 
                             self.game.font, self.game.theme["text"])
         self.difficulty_text = Text(50, 140, f"Difficulty: {self.game.logic.baseline_games[self.game.logic.current_game_index]['label']}", 
@@ -62,6 +62,7 @@ class PlayingState(GameState):
     def update_game_info(self):
         self.game_info.text = f"Puzzle: {self.game.logic.current_game_index + 1}/{len(self.game.logic.baseline_games)}"
         self.difficulty_text.text = f"Difficulty: {self.game.logic.baseline_games[self.game.logic.current_game_index]['label']}"
+        self.mistakes_text.text = f"Mistakes: {self.game.logic.mistakes}/{self.game.logic.max_mistakes}"
 
     def handle_events(self, events):
         for event in events:
@@ -85,9 +86,9 @@ class PlayingState(GameState):
         self.grid.update()
         elapsed = int(time.time() - self.game.logic.start_time)
         self.timer_text.text = f"Time: {elapsed}s"
-        self.mistakes_text.text = f"Mistakes: {self.game.logic.mistakes}/3"
+        self.mistakes_text.text = f"Mistakes: {self.game.logic.mistakes}/{self.game.logic.max_mistakes}"
         
-        if self.game.logic.mistakes >= 3:
+        if self.game.logic.mistakes >= self.game.logic.max_mistakes:
             self.handle_game_over()
 
     def draw(self, screen):

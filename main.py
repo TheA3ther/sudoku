@@ -42,7 +42,8 @@ class Game:
         """Toggles theme globally for all states."""
         self.theme = DARK_MODE if self.theme == LIGHT_MODE else LIGHT_MODE
 
-    def quit(*args):
+    def quit(self):
+        self.logic.save_progress()  # Save progress before quitting
         pygame.quit()
         exit()
 

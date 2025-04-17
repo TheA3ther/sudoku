@@ -49,12 +49,14 @@ class SudokuLogic:
         self.puzzle_grid = None
         self.wrong_cells = set()
         self.mistakes = 0
+        self.max_mistakes = 8  # Increased from 3 to 8
         self.moves_made = 0
         self.hints_used = 0
         self.start_time = None
         self.hint_cell = None
         self.game_over_time = None
         self.current_game_index = 0
+        self.progress_file = "sudoku_progress.txt"
         
         # 20 games with difficulty parameters
         self.baseline_games = [
@@ -88,8 +90,23 @@ class SudokuLogic:
         ]
         
         self.data_logger = DataLogger()
+        self.load_progress()
         self.reset_game()
     
+    def load_progress(self):
+        try:
+            with open(self.progress_file, 'r') as f:
+                self.current_game_index = int(f.read().strip())
+                # Ensure index is within bounds
+                if self.current_game_index >= len(self.baseline_games):
+                    self.current_game_index = 0
+        except (FileNotFoundError, ValueError):
+            self.current_game_index = 0
+
+    def save_progress(self):
+        with open(self.progress_file, 'w') as f:
+            f.write(str(self.current_game_index))
+
     def is_valid_move(self, grid, row, col, num):
         for i in range(self.grid_size):
             if grid[row][i] == num or grid[i][col] == num:
@@ -159,6 +176,7 @@ class SudokuLogic:
         return puzzle
     
     def reset_game(self):
+        self.save_progress()
         current_game = self.baseline_games[self.current_game_index]
         provided_numbers = current_game["provided_numbers"]
         n_clusters = current_game["clusters"]
@@ -203,6 +221,7 @@ class SudokuLogic:
     
     def next_game(self):
         self.current_game_index = (self.current_game_index + 1) % len(self.baseline_games)
+        self.save_progress()
         self.reset_game()
     
     def set_difficulty(self, level):
