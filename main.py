@@ -10,6 +10,7 @@ class Game:
     def __init__(self):
         # initialize pygame
         pygame.init()
+        pygame.display.set_caption("Sudoku")
 
         # initialize screen size
         self.screen = pygame.display.set_mode((1280, 720)) 
@@ -36,7 +37,9 @@ class Game:
         self.current_state = self.states["menu"]
 
     def change_state(self, new_state):
+        print(f"Changing state to {new_state}")
         self.current_state = self.states[new_state]
+        self.current_state.on_enter()
 
     def toggle_theme(self):
         """Toggles theme globally for all states."""
@@ -58,7 +61,6 @@ class Game:
             for event in events:
                 # quit game
                 if event.type == pygame.QUIT:
-                    print("bye")
                     self.quit()
                 if event.type == pygame.KEYDOWN and event.key == pygame.K_t:
                     self.toggle_theme()

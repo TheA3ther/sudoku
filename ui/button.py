@@ -12,15 +12,18 @@ class Button:
         self.font = font
         self.text_color = text_color
         self.action = action
+        self.clicked = False
 
     def draw(self, screen):
         pygame.draw.rect(screen, self.color, self.rect, WIDTH, BORDER_RADIUS)
         text_surface = self.font.render(self.text, True, self.text_color)
-        text_rect = text_surface.get_rect(center = self.rect.center)
+        text_rect = text_surface.get_rect(center=self.rect.center)
         screen.blit(text_surface, text_rect)
 
     def handle_event(self, event):
-        if event.type == pygame.MOUSEBUTTONDOWN:
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if self.rect.collidepoint(event.pos):
                 if self.action:
                     self.action()
+                return True
+        return False

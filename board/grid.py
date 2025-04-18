@@ -23,6 +23,7 @@ class Grid:
             for c in range(self.grid_size):
                 self.cells[r][c].value = self.game.logic.puzzle_grid[r][c] if self.game.logic.puzzle_grid[r][c] != 0 else None
                 self.cells[r][c].candidates = set()  # Clear candidates on new game
+                self.cells[r][c].show_candidates = self.note_mode
 
     def draw(self, screen, font):
         theme = self.game.theme
@@ -67,13 +68,15 @@ class Grid:
     def handle_keypress(self, key):
         if self.selected_cell:
             if key == pygame.K_n:  # Toggle note mode
-                self.note_mode = not self.note_mode
-                # Show/hide candidates for all cells when toggling mode
-                for row in self.cells:
-                    for cell in row:
-                        cell.show_candidates = self.note_mode
+                self.toggle_note_mode()
             else:
                 self.selected_cell.handle_keypress(key, self.note_mode)
+
+    def toggle_note_mode(self):
+        self.note_mode = not self.note_mode
+        for row in self.cells:
+            for cell in row:
+                cell.show_candidates = self.note_mode
 
     def highlight_cells(self):
         self.clear_highlights()

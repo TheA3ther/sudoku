@@ -7,6 +7,9 @@ from board import Grid
 class PlayingState(GameState):
     def __init__(self, game):
         super().__init__(game)
+        self.initialize_game()
+
+    def initialize_game(self):
         self.grid = Grid(9, self.game)
         
         # Game info display
@@ -38,11 +41,7 @@ class PlayingState(GameState):
                                 self.toggle_note_mode)
 
     def toggle_note_mode(self):
-        self.grid.note_mode = not self.grid.note_mode
-        # Update all cells to show/hide candidates
-        for row in self.grid.cells:
-            for cell in row:
-                cell.show_candidates = self.grid.note_mode
+        self.grid.toggle_note_mode()
         self.note_mode_text.text = f"Note Mode: {'ON' if self.grid.note_mode else 'OFF'}"
 
     def provide_hint(self):
@@ -56,8 +55,8 @@ class PlayingState(GameState):
         self.game.logic.next_game()
         self.grid.initialize_grid()
         self.update_game_info()
-        self.note_mode_text.text = "Note Mode: OFF"  # Reset note mode display
-        self.grid.note_mode = False  # Reset note mode
+        self.note_mode_text.text = "Note Mode: OFF"
+        self.grid.note_mode = False
 
     def update_game_info(self):
         self.game_info.text = f"Puzzle: {self.game.logic.current_game_index + 1}/{len(self.game.logic.baseline_games)}"
@@ -109,7 +108,9 @@ class PlayingState(GameState):
         self.note_button.draw(screen)
 
     def handle_game_over(self):
+        self.game.logic.game_over_time = time.time()
         self.game.logic.log_game_result("loss")
+        self.game.logic.reset_game()
         self.game.change_state("menu")
 
     def handle_game_complete(self):
@@ -119,3 +120,6 @@ class PlayingState(GameState):
         self.update_game_info()
         self.note_mode_text.text = "Note Mode: OFF"
         self.grid.note_mode = False
+
+    def on_enter(self):
+        self.initialize_game()
