@@ -53,6 +53,8 @@ class SudokuLogic:
         self.max_mistakes = 10
         self.moves_made = 0
         self.hints_used = 0
+        self.max_hints = 8
+        self.hints_remaining = self.max_hints
         self.start_time = None
         self.hint_cell = None
         self.game_over_time = None
@@ -60,30 +62,22 @@ class SudokuLogic:
         self.progress_file = "sudoku_progress.txt"
         self.cluster_centers = None
         
-        # Enhanced difficulty levels with smoother progression
         self.baseline_games = [
-            # Super Easy (5 games) - 45-41 clues
             {"game_id": 1, "provided_numbers": 45, "clusters": 1, "spread": 0.95, "label": "Super Easy 1", "max_mistakes": 20},
             {"game_id": 2, "provided_numbers": 44, "clusters": 1, "spread": 0.94, "label": "Super Easy 2", "max_mistakes": 20},
             {"game_id": 3, "provided_numbers": 43, "clusters": 1, "spread": 0.93, "label": "Super Easy 3", "max_mistakes": 20},
             {"game_id": 4, "provided_numbers": 42, "clusters": 1, "spread": 0.92, "label": "Super Easy 4", "max_mistakes": 20},
             {"game_id": 5, "provided_numbers": 41, "clusters": 1, "spread": 0.91, "label": "Super Easy 5", "max_mistakes": 20},
-            
-            # Beginner (5 games) - 40-36 clues
             {"game_id": 6, "provided_numbers": 40, "clusters": 1, "spread": 0.9, "label": "Beginner 1", "max_mistakes": 15},
             {"game_id": 7, "provided_numbers": 39, "clusters": 1, "spread": 0.88, "label": "Beginner 2", "max_mistakes": 15},
             {"game_id": 8, "provided_numbers": 38, "clusters": 1, "spread": 0.86, "label": "Beginner 3", "max_mistakes": 15},
             {"game_id": 9, "provided_numbers": 37, "clusters": 1, "spread": 0.84, "label": "Beginner 4", "max_mistakes": 15},
             {"game_id": 10, "provided_numbers": 36, "clusters": 1, "spread": 0.82, "label": "Beginner 5", "max_mistakes": 15},
-            
-            # Intermediate (5 games) - 35-28 clues
             {"game_id": 11, "provided_numbers": 35, "clusters": 1, "spread": 0.8, "label": "Intermediate 1", "max_mistakes": 10},
             {"game_id": 12, "provided_numbers": 34, "clusters": 1, "spread": 0.78, "label": "Intermediate 2", "max_mistakes": 10},
             {"game_id": 13, "provided_numbers": 32, "clusters": 2, "spread": 0.75, "label": "Intermediate 3", "max_mistakes": 10},
             {"game_id": 14, "provided_numbers": 30, "clusters": 2, "spread": 0.7, "label": "Intermediate 4", "max_mistakes": 10},
             {"game_id": 15, "provided_numbers": 28, "clusters": 2, "spread": 0.65, "label": "Intermediate 5", "max_mistakes": 10},
-            
-            # Advanced (5 games) - 26-18 clues
             {"game_id": 16, "provided_numbers": 26, "clusters": 2, "spread": 0.6, "label": "Advanced 1", "max_mistakes": 5},
             {"game_id": 17, "provided_numbers": 24, "clusters": 3, "spread": 0.55, "label": "Advanced 2", "max_mistakes": 5},
             {"game_id": 18, "provided_numbers": 22, "clusters": 3, "spread": 0.5, "label": "Advanced 3", "max_mistakes": 5},
@@ -223,13 +217,14 @@ class SudokuLogic:
         self.mistakes = 0
         self.moves_made = 0
         self.hints_used = 0
+        self.hints_remaining = self.max_hints
         self.hint_cell = None
         self.start_time = time.time()
         self.game_over_time = None
         self.save_progress()
     
     def check_move(self, row, col, num):
-        if num == 0:  # Clearing cell
+        if num == 0:
             self.user_grid[row][col] = 0
             self.wrong_cells.discard((row, col))
             self.moves_made += 1
@@ -260,9 +255,13 @@ class SudokuLogic:
         return True
     
     def provide_hint(self):
+        if self.hints_remaining <= 0:
+            return None
+            
         empty_cells = [(r, c) for r in range(9) for c in range(9) if self.user_grid[r][c] == 0]
         if empty_cells:
             self.hints_used += 1
+            self.hints_remaining -= 1
             self.hint_cell = random.choice(empty_cells)
             row, col = self.hint_cell
             self.user_grid[row][col] = self.full_grid[row][col]
