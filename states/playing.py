@@ -11,19 +11,20 @@ class PlayingState(GameState):
 
     def initialize_game(self):
         self.grid = Grid(9, self.game)
-        
         screen_width = self.game.screen.get_width()
         
-        # Game info display
+        # Game info display - using current_difficulty instead of baseline_games
         self.timer_text = Text(50, 50, "Time: 0", self.game.font, self.game.theme["text"])
-        self.mistakes_text = Text(50, 80, f"Mistakes: 0/{self.game.logic.max_mistakes}", self.game.font, self.game.theme["text"])
-        self.game_info = Text(50, 110, f"Puzzle: {self.game.logic.current_game_index + 1}/{len(self.game.logic.baseline_games)}", 
+        self.mistakes_text = Text(50, 80, f"Mistakes: 0/{self.game.logic.max_mistakes}", 
+                                self.game.font, self.game.theme["text"])
+        self.game_info = Text(50, 110, f"Progress: {len(self.game.logic.learning_games)}/5", 
                             self.game.font, self.game.theme["text"])
-        self.difficulty_text = Text(50, 140, f"Difficulty: {self.game.logic.baseline_games[self.game.logic.current_game_index]['label']}", 
+        self.difficulty_text = Text(50, 140, f"Difficulty: {self.game.logic.current_difficulty['label']}", 
                                   self.game.font, self.game.theme["text"])
-        self.note_mode_text = Text(50, 170, "Note Mode: OFF", self.game.font, self.game.theme["text"])
+        self.note_mode_text = Text(50, 170, "Note Mode: OFF", 
+                                 self.game.font, self.game.theme["text"])
         self.hint_text = Text(50, 200, f"Hints: {self.game.logic.hints_remaining}/{self.game.logic.max_hints}", 
-                             self.game.font, self.game.theme["text"])
+                            self.game.font, self.game.theme["text"])
         
         # Buttons
         button_x = screen_width - 100
@@ -60,11 +61,9 @@ class PlayingState(GameState):
                                 self.toggle_note_mode)
 
     def delete_selected(self):
-        """Handles the delete button click"""
         if self.grid.selected_cell:
             if self.grid.selected_cell.clear_cell():
-                # Play a sound or provide feedback if needed
-                pass
+                self.update_game_info()
 
     def toggle_note_mode(self):
         self.grid.toggle_note_mode()
@@ -79,7 +78,7 @@ class PlayingState(GameState):
             self.hint_text.text = f"Hints: {self.game.logic.hints_remaining}/{self.game.logic.max_hints}"
 
     def next_game(self):
-        self.game.logic.next_game()
+        self.game.logic.reset_game()
         self.grid.initialize_grid()
         self.update_game_info()
         self.note_mode_text.text = "Note Mode: OFF"
@@ -87,8 +86,9 @@ class PlayingState(GameState):
         self.grid.note_mode = False
 
     def update_game_info(self):
-        self.game_info.text = f"Puzzle: {self.game.logic.current_game_index + 1}/{len(self.game.logic.baseline_games)}"
-        self.difficulty_text.text = f"Difficulty: {self.game.logic.baseline_games[self.game.logic.current_game_index]['label']}"
+        diff_info = self.game.logic.get_current_difficulty_info()
+        self.game_info.text = f"Progress: {diff_info['progress']}"
+        self.difficulty_text.text = f"Difficulty: {diff_info['label']}"
         self.mistakes_text.text = f"Mistakes: {self.game.logic.mistakes}/{self.game.logic.max_mistakes}"
 
     def handle_events(self, events):
@@ -105,10 +105,18 @@ class PlayingState(GameState):
                     self.grid.handle_keypress(event.key)
             
             if event.type == pygame.MOUSEBUTTONDOWN:
-                self.grid.handle_click(event.pos)
+                mouse_pos = pygame.mouse.get_pos()
+                button_clicked = False
+                
                 for button in [self.hint_button, self.delete_button, self.menu_button, 
                              self.next_button, self.note_button]:
-                    button.handle_event(event)
+                    if button.rect.collidepoint(mouse_pos):
+                        button.on_click()
+                        button_clicked = True
+                        break
+                
+                if not button_clicked:
+                    self.grid.handle_click(mouse_pos)
                 
                 if self.game.logic.check_completion():
                     self.handle_game_complete()
@@ -136,7 +144,7 @@ class PlayingState(GameState):
         
         # Draw buttons
         self.hint_button.draw(screen)
-      
+        self.delete_button.draw(screen)
         self.menu_button.draw(screen)
         self.next_button.draw(screen)
         self.note_button.draw(screen)

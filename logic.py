@@ -2,9 +2,15 @@ import random
 import time
 import csv
 import os
-from datetime import datetime
-from sklearn.cluster import KMeans
 import numpy as np
+import pandas as pd
+import joblib
+from pathlib import Path
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LinearRegression
+from datetime import datetime
 
 class DataLogger:
     def __init__(self):
@@ -16,34 +22,33 @@ class DataLogger:
             with open(self.csv_file, 'w', newline='') as file:
                 writer = csv.writer(file)
                 writer.writerow([
-                    "timestamp", "game_id", "difficulty_label",
+                    "timestamp", "mode", "difficulty_label",
                     "completion_time", "mistakes", "hints_used", "moves",
                     "provided_numbers", "n_clusters", "spread_factor",
                     "max_mistakes", "result"
                 ])
     
-    def log_game_data(self, game_id, difficulty_label, completion_time, 
-                     mistakes, hints_used, moves, provided_numbers,
-                     n_clusters, spread_factor, max_mistakes, result):
+    def log_game_data(self, game_data):
         with open(self.csv_file, 'a', newline='') as file:
             writer = csv.writer(file)
             writer.writerow([
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                game_id,
-                difficulty_label,
-                completion_time,
-                mistakes,
-                hints_used,
-                moves,
-                provided_numbers,
-                n_clusters,
-                spread_factor,
-                max_mistakes,
-                result
+                game_data['timestamp'],
+                game_data['mode'],
+                game_data['difficulty_label'],
+                game_data['completion_time'],
+                game_data['mistakes'],
+                game_data['hints_used'],
+                game_data['moves'],
+                game_data['provided_numbers'],
+                game_data['n_clusters'],
+                game_data['spread_factor'],
+                game_data['max_mistakes'],
+                game_data['result']
             ])
 
 class SudokuLogic:
     def __init__(self):
+        # Game state variables
         self.grid_size = 9
         self.full_grid = None
         self.user_grid = None
@@ -58,73 +63,91 @@ class SudokuLogic:
         self.start_time = None
         self.hint_cell = None
         self.game_over_time = None
-        self.current_game_index = 0
-        self.progress_file = "sudoku_progress.txt"
         self.cluster_centers = None
         
-        self.baseline_games = [
-            {"game_id": 1, "provided_numbers": 45, "clusters": 1, "spread": 0.95, "label": "Super Easy 1", "max_mistakes": 20},
-            {"game_id": 2, "provided_numbers": 44, "clusters": 1, "spread": 0.94, "label": "Super Easy 2", "max_mistakes": 20},
-            {"game_id": 3, "provided_numbers": 43, "clusters": 1, "spread": 0.93, "label": "Super Easy 3", "max_mistakes": 20},
-            {"game_id": 4, "provided_numbers": 42, "clusters": 1, "spread": 0.92, "label": "Super Easy 4", "max_mistakes": 20},
-            {"game_id": 5, "provided_numbers": 41, "clusters": 1, "spread": 0.91, "label": "Super Easy 5", "max_mistakes": 20},
-            {"game_id": 6, "provided_numbers": 40, "clusters": 1, "spread": 0.9, "label": "Beginner 1", "max_mistakes": 15},
-            {"game_id": 7, "provided_numbers": 39, "clusters": 1, "spread": 0.88, "label": "Beginner 2", "max_mistakes": 15},
-            {"game_id": 8, "provided_numbers": 38, "clusters": 1, "spread": 0.86, "label": "Beginner 3", "max_mistakes": 15},
-            {"game_id": 9, "provided_numbers": 37, "clusters": 1, "spread": 0.84, "label": "Beginner 4", "max_mistakes": 15},
-            {"game_id": 10, "provided_numbers": 36, "clusters": 1, "spread": 0.82, "label": "Beginner 5", "max_mistakes": 15},
-            {"game_id": 11, "provided_numbers": 35, "clusters": 1, "spread": 0.8, "label": "Intermediate 1", "max_mistakes": 10},
-            {"game_id": 12, "provided_numbers": 34, "clusters": 1, "spread": 0.78, "label": "Intermediate 2", "max_mistakes": 10},
-            {"game_id": 13, "provided_numbers": 32, "clusters": 2, "spread": 0.75, "label": "Intermediate 3", "max_mistakes": 10},
-            {"game_id": 14, "provided_numbers": 30, "clusters": 2, "spread": 0.7, "label": "Intermediate 4", "max_mistakes": 10},
-            {"game_id": 15, "provided_numbers": 28, "clusters": 2, "spread": 0.65, "label": "Intermediate 5", "max_mistakes": 10},
-            {"game_id": 16, "provided_numbers": 26, "clusters": 2, "spread": 0.6, "label": "Advanced 1", "max_mistakes": 5},
-            {"game_id": 17, "provided_numbers": 24, "clusters": 3, "spread": 0.55, "label": "Advanced 2", "max_mistakes": 5},
-            {"game_id": 18, "provided_numbers": 22, "clusters": 3, "spread": 0.5, "label": "Advanced 3", "max_mistakes": 5},
-            {"game_id": 19, "provided_numbers": 20, "clusters": 3, "spread": 0.45, "label": "Advanced 4", "max_mistakes": 5},
-            {"game_id": 20, "provided_numbers": 18, "clusters": 3, "spread": 0.4, "label": "Advanced 5", "max_mistakes": 5}
-        ]
+        # Adaptive difficulty system
+        self.model_path = Path(__file__).parent / "models" / "sudoku_model_new.pkl"
+        os.makedirs(self.model_path.parent, exist_ok=True)
+        self.model_loaded = False
+        self.learning_games = []
+        self.adaptive_mode = False
+        self.current_difficulty = {
+            'label': 'Medium',
+            'provided_numbers': 30,
+            'spread': 0.7,
+            'clusters': 2,
+            'max_mistakes': 10
+        }
         
+        # Initialize systems
+        self._load_or_create_model()
         self.data_logger = DataLogger()
-        self.load_progress()
         self.reset_game()
-    
-    def load_progress(self):
+
+    def _load_or_create_model(self):
+        """Initialize or load the model with better error handling"""
         try:
-            with open(self.progress_file, 'r') as f:
-                self.current_game_index = int(f.read().strip())
-                if self.current_game_index >= len(self.baseline_games):
-                    self.current_game_index = 0
-        except (FileNotFoundError, ValueError):
-            self.current_game_index = 0
+            if self.model_path.exists():
+                model_data = joblib.load(self.model_path)
+                if not all(key in model_data for key in ['clues_model', 'spread_model', 'scaler', 'features']):
+                    raise ValueError("Invalid model structure")
+                
+                self.clues_model = model_data['clues_model']
+                self.spread_model = model_data['spread_model']
+                self.scaler = model_data['scaler']
+                self.feature_columns = model_data['features']
+                self.feature_imputer = SimpleImputer(strategy='median')
+                self.model_loaded = True
+                print("✅ Model loaded successfully")
+            else:
+                print("⚠️ No model found, creating new one...")
+                self._create_new_model()
+        except Exception as e:
+            print(f"❌ Model initialization failed: {e}")
+            self.model_loaded = False
+            self._create_new_model()
 
-    def save_progress(self):
-        with open(self.progress_file, 'w') as f:
-            f.write(str(self.current_game_index))
-
-    def is_valid_move(self, grid, row, col, num):
-        if num == 0:
-            return True
+    def _create_new_model(self):
+        """Create a new model with default structure"""
+        try:
+            # Initialize with small dummy data
+            dummy_X = np.array([[1, 0, 0, 5, 0.2, 0.01, 0.01]])
+            dummy_y_clues = np.array([30])
+            dummy_y_spread = np.array([0.7])
             
-        # Check row
-        for x in range(9):
-            if grid[row][x] == num and x != col:
-                return False
-        
-        # Check column
-        for x in range(9):
-            if grid[x][col] == num and x != row:
-                return False
-        
-        # Check 3x3 box
-        start_row, start_col = row - row % 3, col - col % 3
-        for i in range(3):
-            for j in range(3):
-                if grid[i + start_row][j + start_col] == num and (i + start_row != row or j + start_col != col):
-                    return False
-        return True
-    
+            self.clues_model = LinearRegression()
+            self.spread_model = LinearRegression()
+            self.clues_model.fit(dummy_X, dummy_y_clues)
+            self.spread_model.fit(dummy_X, dummy_y_spread)
+            
+            self.scaler = StandardScaler()
+            self.scaler.fit(dummy_X)
+            
+            self.feature_columns = [
+                'completion_time', 'mistakes', 'hints_used', 'moves',
+                'time_per_move', 'mistake_rate', 'hint_rate'
+            ]
+            self.feature_imputer = SimpleImputer(strategy='median')
+            
+            joblib.dump({
+                'clues_model': self.clues_model,
+                'spread_model': self.spread_model,
+                'scaler': self.scaler,
+                'features': self.feature_columns
+            }, self.model_path)
+            
+            self.model_loaded = True
+            print("✅ Created new model structure")
+        except Exception as e:
+            print(f"❌ Failed to create new model: {e}")
+            self.model_loaded = False
+
+    def is_model_available(self):
+        """Check if model is ready for predictions"""
+        return self.model_loaded and len(self.learning_games) >= 5
+
     def generate_sudoku(self):
+        """Generate a completed Sudoku grid"""
         grid = [[0 for _ in range(9)] for _ in range(9)]
         
         def fill_diagonal():
@@ -165,54 +188,193 @@ class SudokuLogic:
         fill_diagonal()
         fill_remaining(0, 3)
         return grid
-    
+
     def remove_numbers_with_clusters(self, grid, provided_numbers, n_clusters, spread_factor):
+        """Improved number removal with better distribution"""
         puzzle = [row[:] for row in grid]
-        total_cells = 81
-        numbers_to_remove = total_cells - provided_numbers
+        numbers_to_remove = 81 - provided_numbers
         
-        coords = np.array([(i, j) for i in range(9) for j in range(9)])
+        # Ensure minimum clues per row/column/box
+        min_clues_per_row = max(3, provided_numbers // 12)
+        min_clues_per_col = max(3, provided_numbers // 12)
+        min_clues_per_box = max(1, provided_numbers // 27)
         
-        kmeans = KMeans(
-            n_clusters=n_clusters,
-            random_state=42,
-            init='k-means++',
-            n_init=10
-        )
-        kmeans.fit(coords)
-        self.cluster_centers = kmeans.cluster_centers_
+        # Create removal candidates with distribution constraints
+        coords = []
+        for row in range(9):
+            for col in range(9):
+                box_row, box_col = row // 3, col // 3
+                # Check if removing would violate minimums
+                row_count = sum(1 for c in range(9) if puzzle[row][c] != 0)
+                col_count = sum(1 for r in range(9) if puzzle[r][col] != 0)
+                box_count = sum(1 for r in range(box_row*3, box_row*3+3)
+                             for c in range(box_col*3, box_col*3+3) if puzzle[r][c] != 0)
+                
+                if (row_count > min_clues_per_row and 
+                    col_count > min_clues_per_col and 
+                    box_count > min_clues_per_box):
+                    coords.append((row, col))
         
-        distances = kmeans.transform(coords)
-        min_distances = np.min(distances, axis=1)
+        # Use KMeans only if we have enough cells to cluster
+        if len(coords) > n_clusters and n_clusters > 1:
+            kmeans = KMeans(n_clusters=min(n_clusters, len(coords)), random_state=42)
+            kmeans.fit(coords)
+            distances = kmeans.transform(coords)
+            min_distances = np.min(distances, axis=1)
+            probabilities = np.exp(-min_distances / (spread_factor * 2))
+            probabilities /= probabilities.sum()
+        else:
+            probabilities = None
         
-        probabilities = np.exp(-min_distances / (spread_factor * 2))
-        probabilities /= probabilities.sum()
-        
-        remove_indices = np.random.choice(
-            len(coords), 
-            size=numbers_to_remove, 
-            replace=False, 
-            p=probabilities
-        )
-        
-        for idx in remove_indices:
-            row, col = coords[idx]
-            puzzle[row][col] = 0
+        # Remove numbers while preserving constraints
+        removed = 0
+        while removed < numbers_to_remove and coords:
+            if probabilities is not None:
+                idx = np.random.choice(len(coords), p=probabilities)
+            else:
+                idx = np.random.randint(len(coords))
             
-        return puzzle
-    
-    def reset_game(self):
-        current_game = self.baseline_games[self.current_game_index]
-        self.max_mistakes = current_game["max_mistakes"]
+            row, col = coords.pop(idx)
+            puzzle[row][col] = 0
+            removed += 1
+            
+            # Update probabilities if using clustering
+            if probabilities is not None:
+                probabilities = np.delete(probabilities, idx)
+                if len(probabilities) > 0:
+                    probabilities /= probabilities.sum()
         
+        return puzzle
+
+    def is_valid_move(self, grid, row, col, num):
+        """Check if a number can be placed in a cell"""
+        if num == 0:
+            return True
+            
+        # Check row
+        for x in range(9):
+            if grid[row][x] == num and x != col:
+                return False
+        
+        # Check column
+        for x in range(9):
+            if grid[x][col] == num and x != row:
+                return False
+        
+        # Check 3x3 box
+        start_row, start_col = row - row % 3, col - col % 3
+        for i in range(3):
+            for j in range(3):
+                if grid[i + start_row][j + start_col] == num and (i + start_row != row or j + start_col != col):
+                    return False
+        return True
+
+    def predict_difficulty(self):
+        """Predict optimal difficulty based on player performance"""
+        if not self.is_model_available() or len(self.learning_games) < 5:
+            return None
+            
+        try:
+            recent_games = self.learning_games[-5:]
+            
+            # Prepare features
+            features = pd.DataFrame([{
+                'completion_time': np.mean([g['completion_time'] for g in recent_games]),
+                'mistakes': np.mean([g['mistakes'] for g in recent_games]),
+                'hints_used': np.mean([g['hints_used'] for g in recent_games]),
+                'moves': np.mean([g['moves'] for g in recent_games]),
+                'time_per_move': np.mean([g['completion_time']/(g['moves']+1e-6) for g in recent_games]),
+                'mistake_rate': np.mean([g['mistakes']/(g['completion_time']+1e-6) for g in recent_games]),
+                'hint_rate': np.mean([g['hints_used']/(g['completion_time']+1e-6) for g in recent_games])
+            }], columns=self.feature_columns)
+            
+            # Preprocess and predict
+            features = self.feature_imputer.transform(features)
+            features_scaled = self.scaler.transform(features)
+            
+            provided = np.clip(self.clues_model.predict(features_scaled)[0], 25, 45)
+            spread = np.clip(self.spread_model.predict(features_scaled)[0], 0.65, 0.95)
+            clusters = 1 if provided >= 35 else (2 if provided >= 25 else 3)
+            
+            return {
+                'provided_numbers': int(provided),
+                'spread': float(spread),
+                'clusters': clusters,
+                'max_mistakes': max(5, 20 - int(provided)//3),
+                'label': self._get_difficulty_label(provided)
+            }
+        except Exception as e:
+            print(f"❌ Prediction failed: {e}")
+            return None
+
+    def _get_difficulty_label(self, clues):
+        """Convert clue count to difficulty label"""
+        if clues >= 35: return 'Beginner'
+        elif clues >= 30: return 'Easy'
+        elif clues >= 25: return 'Medium'
+        elif clues >= 20: return 'Hard'
+        return 'Expert'
+
+    def reset_game(self):
+        """Start a new game based on current mode"""
+        if not self.model_loaded:
+            self._setup_fallback_game()
+        elif len(self.learning_games) < 5:
+            self._setup_learning_game()
+        else:
+            self._setup_adaptive_game()
+        self._reset_tracking()
+
+    def _setup_fallback_game(self):
+        """Default game when model isn't available"""
+        self.current_difficulty = {
+            'label': 'Medium',
+            'provided_numbers': 30,
+            'spread': 0.7,
+            'clusters': 2,
+            'max_mistakes': 10
+        }
+        self._generate_puzzle()
+
+    def _setup_learning_game(self):
+        """Medium difficulty games for initial learning phase"""
+        self.current_difficulty = {
+            'label': f'Learning {len(self.learning_games)+1}/5',
+            'provided_numbers': 30,
+            'spread': 0.7,
+            'clusters': 2,
+            'max_mistakes': 10
+        }
+        self._generate_puzzle()
+
+    def _setup_adaptive_game(self):
+        """Games with predicted difficulty after learning phase"""
+        params = self.predict_difficulty()
+        if params:
+            self.current_difficulty = {
+                'label': f'Adaptive: {params["label"]}',
+                'provided_numbers': params['provided_numbers'],
+                'spread': params['spread'],
+                'clusters': params['clusters'],
+                'max_mistakes': params['max_mistakes']
+            }
+        else:
+            self._setup_fallback_game()
+        self._generate_puzzle()
+
+    def _generate_puzzle(self):
+        """Generate the actual puzzle based on current difficulty"""
         self.full_grid = self.generate_sudoku()
         self.puzzle_grid = self.remove_numbers_with_clusters(
-            self.full_grid, 
-            current_game["provided_numbers"],
-            current_game["clusters"],
-            current_game["spread"]
+            self.full_grid,
+            self.current_difficulty['provided_numbers'],
+            self.current_difficulty['clusters'],
+            self.current_difficulty['spread']
         )
         self.user_grid = [row[:] for row in self.puzzle_grid]
+
+    def _reset_tracking(self):
+        """Reset game tracking variables"""
         self.wrong_cells = set()
         self.mistakes = 0
         self.moves_made = 0
@@ -221,9 +383,9 @@ class SudokuLogic:
         self.hint_cell = None
         self.start_time = time.time()
         self.game_over_time = None
-        self.save_progress()
-    
+
     def check_move(self, row, col, num):
+        """Validate a player's move"""
         if num == 0:
             self.user_grid[row][col] = 0
             self.wrong_cells.discard((row, col))
@@ -246,15 +408,17 @@ class SudokuLogic:
             
         self.moves_made += 1
         return is_correct
-    
+
     def check_completion(self):
+        """Check if puzzle is complete"""
         for row in range(9):
             for col in range(9):
                 if self.user_grid[row][col] != self.full_grid[row][col]:
                     return False
         return True
-    
+
     def provide_hint(self):
+        """Provide a hint to the player"""
         if self.hints_remaining <= 0:
             return None
             
@@ -267,49 +431,52 @@ class SudokuLogic:
             self.user_grid[row][col] = self.full_grid[row][col]
             return self.hint_cell
         return None
-    
-    def next_game(self):
-        self.current_game_index = (self.current_game_index + 1) % len(self.baseline_games)
-        self.reset_game()
-    
-    def previous_game(self):
-        self.current_game_index = (self.current_game_index - 1) % len(self.baseline_games)
-        self.reset_game()
-    
-    def set_difficulty(self, level):
-        if 0 <= level < len(self.baseline_games):
-            self.current_game_index = level
-            self.reset_game()
-    
+
     def log_game_result(self, result):
-        current_game = self.baseline_games[self.current_game_index]
-        completion_time = int((self.game_over_time or time.time()) - self.start_time)
-        
-        self.data_logger.log_game_data(
-            game_id=current_game["game_id"],
-            difficulty_label=current_game["label"],
-            completion_time=completion_time,
-            mistakes=self.mistakes,
-            hints_used=self.hints_used,
-            moves=self.moves_made,
-            provided_numbers=current_game["provided_numbers"],
-            n_clusters=current_game["clusters"],
-            spread_factor=current_game["spread"],
-            max_mistakes=current_game["max_mistakes"],
-            result=result
-        )
-    
-    def get_current_difficulty_info(self):
-        current_game = self.baseline_games[self.current_game_index]
-        return {
-            "label": current_game["label"],
-            "provided": current_game["provided_numbers"],
-            "max_mistakes": current_game["max_mistakes"],
-            "progress": f"{self.current_game_index + 1}/{len(self.baseline_games)}"
+        """Record game results and switch to adaptive after 5 games"""
+        game_data = {
+            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'mode': 'adaptive' if self.adaptive_mode else 'learning',
+            'difficulty_label': self.current_difficulty['label'],
+            'completion_time': int((self.game_over_time or time.time()) - self.start_time),
+            'mistakes': self.mistakes,
+            'hints_used': self.hints_used,
+            'moves': self.moves_made,
+            'provided_numbers': self.current_difficulty['provided_numbers'],
+            'n_clusters': self.current_difficulty['clusters'],
+            'spread_factor': self.current_difficulty['spread'],
+            'max_mistakes': self.current_difficulty['max_mistakes'],
+            'result': result
         }
-    
+        
+        # Store for adaptive difficulty
+        self.learning_games.append(game_data)
+        
+        # Keep only last 5 games for predictions
+        if len(self.learning_games) > 5:
+            self.learning_games.pop(0)
+        
+        # Switch to adaptive mode after 5 learning games
+        if len(self.learning_games) == 5 and not self.adaptive_mode:
+            print("🎯 Switching to adaptive difficulty mode")
+            self.adaptive_mode = True
+        
+        # Log to CSV
+        self.data_logger.log_game_data(game_data)
+
+    def get_current_difficulty_info(self):
+        """Get current difficulty settings for UI"""
+        return {
+            'label': self.current_difficulty['label'],
+            'provided': self.current_difficulty['provided_numbers'],
+            'max_mistakes': self.current_difficulty['max_mistakes'],
+            'progress': f"{len(self.learning_games)}/5" if not self.adaptive_mode else "Adaptive"
+        }
+
     def get_game_time(self):
+        """Get elapsed game time in seconds"""
         return int(time.time() - self.start_time)
-    
+
     def get_remaining_cells(self):
+        """Count remaining empty cells"""
         return sum(1 for row in range(9) for col in range(9) if self.user_grid[row][col] == 0)
