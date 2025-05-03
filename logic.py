@@ -147,104 +147,127 @@ class SudokuLogic:
         return self.model_loaded and len(self.learning_games) >= 5
 
     def generate_sudoku(self):
-        """Generate a completed Sudoku grid"""
+        """Generate a completed Sudoku grid using a more traditional approach"""
         grid = [[0 for _ in range(9)] for _ in range(9)]
         
-        def fill_diagonal():
-            for box in range(0, 9, 3):
-                nums = list(range(1, 10))
-                random.shuffle(nums)
-                for i in range(3):
-                    for j in range(3):
-                        grid[box + i][box + j] = nums.pop()
+        # Fill diagonal boxes first (they are independent)
+        self._fill_diagonal_boxes(grid)
         
-        def fill_remaining(row, col):
-            if col >= 9 and row < 8:
-                row += 1
-                col = 0
-            if row >= 9 and col >= 9:
-                return True
-            if row < 3:
-                if col < 3:
-                    col = 3
-            elif row < 6:
-                if col == int(row / 3) * 3:
-                    col += 3
-            else:
-                if col == 6:
-                    row += 1
-                    col = 0
-                    if row >= 9:
-                        return True
-            
-            for num in range(1, 10):
-                if self.is_valid_move(grid, row, col, num):
-                    grid[row][col] = num
-                    if fill_remaining(row, col + 1):
-                        return True
-                    grid[row][col] = 0
-            return False
+        # Fill remaining cells
+        self._fill_remaining(grid, 0, 3)
         
-        fill_diagonal()
-        fill_remaining(0, 3)
         return grid
 
-    def remove_numbers_with_clusters(self, grid, provided_numbers, n_clusters, spread_factor):
-        """Improved number removal with better distribution"""
+    def _fill_diagonal_boxes(self, grid):
+        """Fill the three diagonal 3x3 boxes"""
+        for box in range(0, 9, 3):
+            nums = list(range(1, 10))
+            random.shuffle(nums)
+            for i in range(3):
+                for j in range(3):
+                    grid[box + i][box + j] = nums.pop()
+
+    def _fill_remaining(self, grid, row, col):
+        """Recursively fill the remaining cells"""
+        if col >= 9 and row < 8:
+            row += 1
+            col = 0
+        if row >= 9 and col >= 9:
+            return True
+            
+        if row < 3:
+            if col < 3:
+                col = 3
+        elif row < 6:
+            if col == int(row / 3) * 3:
+                col += 3
+        else:
+            if col == 6:
+                row += 1
+                col = 0
+                if row >= 9:
+                    return True
+        
+        for num in self._shuffled_numbers():
+            if self.is_valid_move(grid, row, col, num):
+                grid[row][col] = num
+                if self._fill_remaining(grid, row, col + 1):
+                    return True
+                grid[row][col] = 0
+        return False
+
+    def _shuffled_numbers(self):
+        """Return numbers 1-9 in random order"""
+        nums = list(range(1, 10))
+        random.shuffle(nums)
+        return nums
+
+    def remove_numbers(self, grid, provided_numbers):
+        """Remove numbers to create a puzzle with better distribution"""
         puzzle = [row[:] for row in grid]
-        numbers_to_remove = 81 - provided_numbers
+        cells_to_remove = 81 - provided_numbers
         
-        # Ensure minimum clues per row/column/box
-        min_clues_per_row = max(3, provided_numbers // 12)
-        min_clues_per_col = max(3, provided_numbers // 12)
-        min_clues_per_box = max(1, provided_numbers // 27)
+        # Create list of all cell coordinates
+        all_cells = [(r, c) for r in range(9) for c in range(9)]
+        random.shuffle(all_cells)
         
-        # Create removal candidates with distribution constraints
-        coords = []
+        removed = 0
+        for row, col in all_cells:
+            # Don't remove if it would make the puzzle unsolvable
+            if puzzle[row][col] == 0:
+                continue
+                
+            # Store the value in case we need to put it back
+            backup = puzzle[row][col]
+            puzzle[row][col] = 0
+            
+            # Check if the puzzle still has a unique solution
+            if not self._has_unique_solution(puzzle):
+                puzzle[row][col] = backup
+            else:
+                removed += 1
+                if removed >= cells_to_remove:
+                    break
+                    
+        return puzzle
+
+    def _has_unique_solution(self, puzzle):
+        """Check if the puzzle has exactly one solution"""
+        # Make a copy to work with
+        temp_grid = [row[:] for row in puzzle]
+        
+        # Count solutions (we stop after finding 2)
+        count = [0]
+        self._count_solutions(temp_grid, count)
+        return count[0] == 1
+
+    def _count_solutions(self, grid, count):
+        """Recursively count solutions (stop at 2)"""
+        if count[0] > 1:
+            return
+            
+        empty = self._find_empty_cell(grid)
+        if not empty:
+            count[0] += 1
+            return
+            
+        row, col = empty
+        for num in range(1, 10):
+            if self.is_valid_move(grid, row, col, num):
+                grid[row][col] = num
+                self._count_solutions(grid, count)
+                grid[row][col] = 0
+                
+                if count[0] > 1:
+                    return
+
+    def _find_empty_cell(self, grid):
+        """Find the next empty cell (returns None if no empty cells)"""
         for row in range(9):
             for col in range(9):
-                box_row, box_col = row // 3, col // 3
-                # Check if removing would violate minimums
-                row_count = sum(1 for c in range(9) if puzzle[row][c] != 0)
-                col_count = sum(1 for r in range(9) if puzzle[r][col] != 0)
-                box_count = sum(1 for r in range(box_row*3, box_row*3+3)
-                             for c in range(box_col*3, box_col*3+3) if puzzle[r][c] != 0)
-                
-                if (row_count > min_clues_per_row and 
-                    col_count > min_clues_per_col and 
-                    box_count > min_clues_per_box):
-                    coords.append((row, col))
-        
-        # Use KMeans only if we have enough cells to cluster
-        if len(coords) > n_clusters and n_clusters > 1:
-            kmeans = KMeans(n_clusters=min(n_clusters, len(coords)), random_state=42)
-            kmeans.fit(coords)
-            distances = kmeans.transform(coords)
-            min_distances = np.min(distances, axis=1)
-            probabilities = np.exp(-min_distances / (spread_factor * 2))
-            probabilities /= probabilities.sum()
-        else:
-            probabilities = None
-        
-        # Remove numbers while preserving constraints
-        removed = 0
-        while removed < numbers_to_remove and coords:
-            if probabilities is not None:
-                idx = np.random.choice(len(coords), p=probabilities)
-            else:
-                idx = np.random.randint(len(coords))
-            
-            row, col = coords.pop(idx)
-            puzzle[row][col] = 0
-            removed += 1
-            
-            # Update probabilities if using clustering
-            if probabilities is not None:
-                probabilities = np.delete(probabilities, idx)
-                if len(probabilities) > 0:
-                    probabilities /= probabilities.sum()
-        
-        return puzzle
+                if grid[row][col] == 0:
+                    return (row, col)
+        return None
 
     def is_valid_move(self, grid, row, col, num):
         """Check if a number can be placed in a cell"""
@@ -365,11 +388,9 @@ class SudokuLogic:
     def _generate_puzzle(self):
         """Generate the actual puzzle based on current difficulty"""
         self.full_grid = self.generate_sudoku()
-        self.puzzle_grid = self.remove_numbers_with_clusters(
+        self.puzzle_grid = self.remove_numbers(
             self.full_grid,
-            self.current_difficulty['provided_numbers'],
-            self.current_difficulty['clusters'],
-            self.current_difficulty['spread']
+            self.current_difficulty['provided_numbers']
         )
         self.user_grid = [row[:] for row in self.puzzle_grid]
 
