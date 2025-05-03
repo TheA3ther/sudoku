@@ -2,6 +2,7 @@ import random
 import time
 import csv
 import os
+import json
 import numpy as np
 import pandas as pd
 import joblib
@@ -48,6 +49,10 @@ class DataLogger:
 
 class SudokuLogic:
     def __init__(self):
+        # Initialize model path
+        self.model_path = Path("/Users/stalinjosephbaguio/Desktop/merge/model/models/sudoku_model_fixed.pkl")
+        os.makedirs(self.model_path.parent, exist_ok=True)
+        
         # Game state variables
         self.grid_size = 9
         self.full_grid = None
@@ -63,53 +68,84 @@ class SudokuLogic:
         self.start_time = None
         self.hint_cell = None
         self.game_over_time = None
-        self.cluster_centers = None
         
-        # Adaptive difficulty system
-        self.model_path = Path(__file__).parent / "models" / "sudoku_model_new.pkl"
-        os.makedirs(self.model_path.parent, exist_ok=True)
-        self.model_loaded = False
+        # Progress tracking
         self.learning_games = []
         self.adaptive_mode = False
-        self.current_difficulty = {
-            'label': 'Medium',
-            'provided_numbers': 30,
-            'spread': 0.7,
-            'clusters': 2,
-            'max_mistakes': 10
-        }
+        self.model_loaded = False
         
         # Initialize systems
         self._load_or_create_model()
+        self._load_progress()
         self.data_logger = DataLogger()
         self.reset_game()
 
+    def _load_progress(self):
+        """Load saved progress automatically"""
+        save_path = Path(__file__).parent / "saves" / "progress.json"
+        if save_path.exists():
+            try:
+                with open(save_path, 'r') as f:
+                    data = json.load(f)
+                self.learning_games = data.get('learning_games', [])
+                self.adaptive_mode = data.get('adaptive_mode', False)
+                print(f"Loaded progress: {len(self.learning_games)} learning games, adaptive: {self.adaptive_mode}")
+            except Exception as e:
+                print(f"Error loading progress: {e}")
+                self.learning_games = []
+                self.adaptive_mode = False
+
+    def save_progress(self):
+        """Save progress to file"""
+        save_path = Path(__file__).parent / "saves" / "progress.json"
+        save_path.parent.mkdir(exist_ok=True)
+        data = {
+            'learning_games': self.learning_games,
+            'adaptive_mode': self.adaptive_mode
+        }
+        try:
+            with open(save_path, 'w') as f:
+                json.dump(data, f)
+            print("Progress saved successfully")
+        except Exception as e:
+            print(f"Error saving progress: {e}")
+
     def _load_or_create_model(self):
-        """Initialize or load the model with better error handling"""
+        """Load the saved machine learning model or create a new one"""
         try:
             if self.model_path.exists():
+                print(f"Loading model from: {self.model_path}")
                 model_data = joblib.load(self.model_path)
-                if not all(key in model_data for key in ['clues_model', 'spread_model', 'scaler', 'features']):
-                    raise ValueError("Invalid model structure")
                 
+                # Verify model components
+                required_keys = ['clues_model', 'spread_model', 'scaler', 'features']
+                if not all(key in model_data for key in required_keys):
+                    raise ValueError("Model file missing required components")
+                
+                # Load model components
                 self.clues_model = model_data['clues_model']
                 self.spread_model = model_data['spread_model']
                 self.scaler = model_data['scaler']
                 self.feature_columns = model_data['features']
+                
+                # Initialize and fit the imputer
                 self.feature_imputer = SimpleImputer(strategy='median')
+                dummy_data = np.zeros((1, len(self.feature_columns)))
+                self.feature_imputer.fit(dummy_data)
+                
                 self.model_loaded = True
-                print("✅ Model loaded successfully")
+                print("✅ Machine learning model loaded successfully")
             else:
-                print("⚠️ No model found, creating new one...")
+                print(f"⚠️ No model found at: {self.model_path}")
                 self._create_new_model()
         except Exception as e:
-            print(f"❌ Model initialization failed: {e}")
-            self.model_loaded = False
+            print(f"❌ Model loading failed: {e}")
             self._create_new_model()
 
     def _create_new_model(self):
-        """Create a new model with default structure"""
+        """Create a new model if loading fails"""
         try:
+            print("Creating new model structure...")
             # Initialize with small dummy data
             dummy_X = np.array([[1, 0, 0, 5, 0.2, 0.01, 0.01]])
             dummy_y_clues = np.array([30])
@@ -120,22 +156,24 @@ class SudokuLogic:
             self.clues_model.fit(dummy_X, dummy_y_clues)
             self.spread_model.fit(dummy_X, dummy_y_spread)
             
-            self.scaler = StandardScaler()
-            self.scaler.fit(dummy_X)
-            
+            self.scaler = StandardScaler().fit(dummy_X)
             self.feature_columns = [
                 'completion_time', 'mistakes', 'hints_used', 'moves',
                 'time_per_move', 'mistake_rate', 'hint_rate'
             ]
-            self.feature_imputer = SimpleImputer(strategy='median')
             
-            joblib.dump({
+            # Initialize and fit the imputer
+            self.feature_imputer = SimpleImputer(strategy='median')
+            self.feature_imputer.fit(dummy_X)
+            
+            model_data = {
                 'clues_model': self.clues_model,
                 'spread_model': self.spread_model,
                 'scaler': self.scaler,
                 'features': self.feature_columns
-            }, self.model_path)
+            }
             
+            joblib.dump(model_data, self.model_path)
             self.model_loaded = True
             print("✅ Created new model structure")
         except Exception as e:
@@ -147,73 +185,52 @@ class SudokuLogic:
         return self.model_loaded and len(self.learning_games) >= 5
 
     def generate_sudoku(self):
-        """Generate a completed Sudoku grid using a more traditional approach"""
+        """Generate a completed Sudoku grid with traditional structure"""
         grid = [[0 for _ in range(9)] for _ in range(9)]
         
-        # Fill diagonal boxes first (they are independent)
-        self._fill_diagonal_boxes(grid)
-        
-        # Fill remaining cells
-        self._fill_remaining(grid, 0, 3)
-        
-        return grid
-
-    def _fill_diagonal_boxes(self, grid):
-        """Fill the three diagonal 3x3 boxes"""
+        # Fill diagonal boxes first (independent of each other)
         for box in range(0, 9, 3):
             nums = list(range(1, 10))
             random.shuffle(nums)
             for i in range(3):
                 for j in range(3):
-                    grid[box + i][box + j] = nums.pop()
-
-    def _fill_remaining(self, grid, row, col):
-        """Recursively fill the remaining cells"""
-        if col >= 9 and row < 8:
-            row += 1
-            col = 0
-        if row >= 9 and col >= 9:
-            return True
-            
-        if row < 3:
-            if col < 3:
-                col = 3
-        elif row < 6:
-            if col == int(row / 3) * 3:
-                col += 3
-        else:
-            if col == 6:
+                    grid[box+i][box+j] = nums.pop()
+        
+        # Solve the remaining cells using randomized backtracking
+        def solve(row, col):
+            if col == 9:
+                if row == 8:
+                    return True
                 row += 1
                 col = 0
-                if row >= 9:
-                    return True
+                
+            if grid[row][col] > 0:
+                return solve(row, col + 1)
+                
+            for num in random.sample(range(1, 10), 9):
+                if self.is_valid_move(grid, row, col, num):
+                    grid[row][col] = num
+                    if solve(row, col + 1):
+                        return True
+                    grid[row][col] = 0
+            return False
         
-        for num in self._shuffled_numbers():
-            if self.is_valid_move(grid, row, col, num):
-                grid[row][col] = num
-                if self._fill_remaining(grid, row, col + 1):
-                    return True
-                grid[row][col] = 0
-        return False
+        solve(0, 0)
+        return grid
 
-    def _shuffled_numbers(self):
-        """Return numbers 1-9 in random order"""
-        nums = list(range(1, 10))
-        random.shuffle(nums)
-        return nums
-
-    def remove_numbers(self, grid, provided_numbers):
-        """Remove numbers to create a puzzle with better distribution"""
+    def remove_numbers(self, grid, clues):
+        """Remove numbers to create a puzzle with good distribution and unique solution"""
         puzzle = [row[:] for row in grid]
-        cells_to_remove = 81 - provided_numbers
-        
-        # Create list of all cell coordinates
-        all_cells = [(r, c) for r in range(9) for c in range(9)]
-        random.shuffle(all_cells)
+        cells = [(r, c) for r in range(9) for c in range(9)]
+        random.shuffle(cells)
         
         removed = 0
-        for row, col in all_cells:
-            # Don't remove if it would make the puzzle unsolvable
+        target_removals = 81 - clues
+        
+        for row, col in cells:
+            if removed >= target_removals:
+                break
+                
             if puzzle[row][col] == 0:
                 continue
                 
@@ -222,47 +239,41 @@ class SudokuLogic:
             puzzle[row][col] = 0
             
             # Check if the puzzle still has a unique solution
-            if not self._has_unique_solution(puzzle):
+            if not self._has_unique_solution([row[:] for row in puzzle]):
                 puzzle[row][col] = backup
             else:
                 removed += 1
-                if removed >= cells_to_remove:
-                    break
-                    
+                
         return puzzle
 
     def _has_unique_solution(self, puzzle):
-        """Check if the puzzle has exactly one solution"""
-        # Make a copy to work with
+        """Check if puzzle has exactly one solution"""
         temp_grid = [row[:] for row in puzzle]
-        
-        # Count solutions (we stop after finding 2)
-        count = [0]
-        self._count_solutions(temp_grid, count)
-        return count[0] == 1
+        solutions = [0]
+        self._count_solutions(temp_grid, solutions)
+        return solutions[0] == 1
 
-    def _count_solutions(self, grid, count):
-        """Recursively count solutions (stop at 2)"""
-        if count[0] > 1:
+    def _count_solutions(self, grid, solutions):
+        """Count solutions (stop after finding 2)"""
+        if solutions[0] > 1:
             return
             
         empty = self._find_empty_cell(grid)
         if not empty:
-            count[0] += 1
+            solutions[0] += 1
             return
             
         row, col = empty
-        for num in range(1, 10):
+        for num in random.sample(range(1, 10), 9):
             if self.is_valid_move(grid, row, col, num):
                 grid[row][col] = num
-                self._count_solutions(grid, count)
+                self._count_solutions(grid, solutions)
                 grid[row][col] = 0
-                
-                if count[0] > 1:
+                if solutions[0] > 1:
                     return
 
     def _find_empty_cell(self, grid):
-        """Find the next empty cell (returns None if no empty cells)"""
+        """Find next empty cell (returns None if no empty cells)"""
         for row in range(9):
             for col in range(9):
                 if grid[row][col] == 0:
@@ -431,7 +442,14 @@ class SudokuLogic:
         return is_correct
 
     def check_completion(self):
-        """Check if puzzle is complete"""
+        """Check if puzzle is complete and correct"""
+        # First verify all cells are filled
+        for row in range(9):
+            for col in range(9):
+                if self.user_grid[row][col] == 0:
+                    return False
+        
+        # Then verify all numbers match solution
         for row in range(9):
             for col in range(9):
                 if self.user_grid[row][col] != self.full_grid[row][col]:
@@ -454,12 +472,15 @@ class SudokuLogic:
         return None
 
     def log_game_result(self, result):
-        """Record game results and switch to adaptive after 5 games"""
+        """Handle game completion and prepare next puzzle"""
+        # Calculate completion time
+        completion_time = int((self.game_over_time or time.time()) - self.start_time)
+        
         game_data = {
             'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             'mode': 'adaptive' if self.adaptive_mode else 'learning',
             'difficulty_label': self.current_difficulty['label'],
-            'completion_time': int((self.game_over_time or time.time()) - self.start_time),
+            'completion_time': completion_time,
             'mistakes': self.mistakes,
             'hints_used': self.hints_used,
             'moves': self.moves_made,
@@ -470,20 +491,20 @@ class SudokuLogic:
             'result': result
         }
         
-        # Store for adaptive difficulty
+        # Update learning games
         self.learning_games.append(game_data)
-        
-        # Keep only last 5 games for predictions
         if len(self.learning_games) > 5:
             self.learning_games.pop(0)
         
-        # Switch to adaptive mode after 5 learning games
+        # Switch to adaptive mode if needed
         if len(self.learning_games) == 5 and not self.adaptive_mode:
-            print("🎯 Switching to adaptive difficulty mode")
             self.adaptive_mode = True
         
-        # Log to CSV
+        # Save progress and log data
+        self.save_progress()
         self.data_logger.log_game_data(game_data)
+        
+        return True  # Successfully logged completion
 
     def get_current_difficulty_info(self):
         """Get current difficulty settings for UI"""

@@ -15,7 +15,7 @@ class PlayingState(GameState):
         self._init_ui()
 
     def _init_ui(self):
-        """Initialize UI elements matching your Button implementation"""
+        """Initialize UI elements"""
         screen_width = self.game.screen.get_width()
         
         # Game info texts
@@ -37,7 +37,7 @@ class PlayingState(GameState):
         self.hint_text = Text(50, 230, f"Hints: {self.game.logic.hints_remaining}/{self.game.logic.max_hints}", 
                              self.game.font, self.game.theme["text"])
         
-        # Buttons initialization using 'action' parameter
+        # Buttons initialization
         button_x = screen_width - 100
         button_y = 50
         button_spacing = 40
@@ -71,7 +71,6 @@ class PlayingState(GameState):
                                 self.game.font, self.game.theme["text"],
                                 action=self.toggle_note_mode)
 
-        # Store buttons in a list for event handling
         self.buttons = [self.hint_button, self.delete_button, 
                        self.menu_button, self.next_button, 
                        self.note_button]
@@ -93,11 +92,7 @@ class PlayingState(GameState):
             self.hint_text.text = f"Hints: {self.game.logic.hints_remaining}/{self.game.logic.max_hints}"
 
     def next_game(self):
-        # Clear all wrong marks before starting new game
-        for row in self.grid.cells:
-            for cell in row:
-                cell.temp_wrong = False
-        
+        self.game.logic.save_progress()
         self.game.logic.next_game()
         self.grid.initialize_grid()
         self.update_game_info()
@@ -128,7 +123,6 @@ class PlayingState(GameState):
                 pos = pygame.mouse.get_pos()
                 self.grid.handle_click(pos)
                 
-                # Handle button clicks using your Button class's method
                 for button in self.buttons:
                     button.handle_event(event)
                 
@@ -180,28 +174,48 @@ class PlayingState(GameState):
         self.game.change_state("menu")
 
     def _handle_game_completion(self):
-        self.game.logic.log_game_result("win")
+        """Handle puzzle completion and transition to next game"""
+        if self.game.logic.check_completion():
+            # Show completion message
+            self._show_completion_message()
+            
+            # Log result and get next puzzle
+            self.game.logic.log_game_result("win")
+            self._prepare_next_game()
+
+    def _show_completion_message(self):
+        """Display puzzle completion message"""
+        screen = self.game.screen
+        font = pygame.font.Font(None, 48)
+        text = font.render("Puzzle Completed! Loading next...", True, (0, 255, 0))
+        text_rect = text.get_rect(center=(screen.get_width()//2, screen.get_height()//2))
         
-        # Clear all wrong marks from cells
-        for row in self.grid.cells:
-            for cell in row:
-                cell.temp_wrong = False
+        # Draw on transparent overlay
+        overlay = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 128))  # Semi-transparent black
+        screen.blit(overlay, (0, 0))
+        screen.blit(text, text_rect)
+        pygame.display.flip()
+        pygame.time.delay(1500)  # Show for 1.5 seconds
+
+    def _prepare_next_game(self):
+        """Reset game state for next puzzle"""
+        # Reset logic
+        self.game.logic.reset_game()
         
-        if self.game.logic.adaptive_mode:
-            params = self.game.logic.predict_difficulty()
-            if params:
-                self.adaptive_notice_text = (
-                    f"ADAPTIVE: {params['provided_numbers']} clues | "
-                    f"Spread: {params['spread']:.2f}"
-                )
-                self.adaptive_notice_time = time.time()
-                self.show_adaptive_notice = True
-        
+        # Reset grid display
         self.grid.initialize_grid()
+        self.grid.selected_cell = None
+        self.grid.clear_highlights()
+        
+        # Reset UI elements
         self.update_game_info()
         self.note_mode_text.text = "Note Mode: OFF"
         self.hint_text.text = f"Hints: {self.game.logic.hints_remaining}/{self.game.logic.max_hints}"
         self.grid.note_mode = False
+        
+        # Redraw everything
+        self.draw(self.game.screen)
 
     def on_enter(self):
         self._init_ui()

@@ -15,15 +15,15 @@ class Grid:
         self.cells = [[Cell(r, c, self.cell_size, self.offset_x, self.offset_y, game) 
                       for c in range(grid_size)] for r in range(grid_size)]
         self.selected_cell = None
-        self.note_mode = False  # Track whether we're in note mode
+        self.note_mode = False
         self.initialize_grid()
 
     def initialize_grid(self):
         for r in range(self.grid_size):
             for c in range(self.grid_size):
                 self.cells[r][c].value = self.game.logic.puzzle_grid[r][c] if self.game.logic.puzzle_grid[r][c] != 0 else None
-                self.cells[r][c].candidates = set()  # Clear candidates on new game
-                self.cells[r][c].temp_wrong = False  # Clear wrong marks
+                self.cells[r][c].candidates = set()
+                self.cells[r][c].temp_wrong = False
                 self.cells[r][c].show_candidates = self.note_mode
 
     def draw(self, screen, font):
@@ -99,7 +99,9 @@ class Grid:
                     cell.same_number = True
 
     def clear_highlights(self):
+        """Clear all cell highlighting"""
         for row in self.cells:
             for cell in row:
                 cell.highlighted = False
                 cell.same_number = False
+                cell.temp_wrong = False
