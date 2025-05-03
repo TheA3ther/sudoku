@@ -23,6 +23,7 @@ class Grid:
             for c in range(self.grid_size):
                 self.cells[r][c].value = self.game.logic.puzzle_grid[r][c] if self.game.logic.puzzle_grid[r][c] != 0 else None
                 self.cells[r][c].candidates = set()  # Clear candidates on new game
+                self.cells[r][c].temp_wrong = False  # Clear wrong marks
                 self.cells[r][c].show_candidates = self.note_mode
 
     def draw(self, screen, font):

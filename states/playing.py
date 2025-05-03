@@ -93,6 +93,11 @@ class PlayingState(GameState):
             self.hint_text.text = f"Hints: {self.game.logic.hints_remaining}/{self.game.logic.max_hints}"
 
     def next_game(self):
+        # Clear all wrong marks before starting new game
+        for row in self.grid.cells:
+            for cell in row:
+                cell.temp_wrong = False
+        
         self.game.logic.next_game()
         self.grid.initialize_grid()
         self.update_game_info()
@@ -176,6 +181,11 @@ class PlayingState(GameState):
 
     def _handle_game_completion(self):
         self.game.logic.log_game_result("win")
+        
+        # Clear all wrong marks from cells
+        for row in self.grid.cells:
+            for cell in row:
+                cell.temp_wrong = False
         
         if self.game.logic.adaptive_mode:
             params = self.game.logic.predict_difficulty()

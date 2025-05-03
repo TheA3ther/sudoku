@@ -1,0 +1,8 @@
+timestamp,mode,difficulty_label,completion_time,mistakes,hints_used,moves,provided_numbers,n_clusters,spread_factor,max_mistakes,result
+2025-05-03 10:39:08,learning,Learning 1/5,7,10,0,20,30,2,0.7,10,loss
+2025-05-03 10:39:17,learning,Learning 2/5,8,10,0,20,30,2,0.7,10,loss
+2025-05-03 10:39:26,learning,Learning 3/5,9,10,0,20,30,2,0.7,10,loss
+2025-05-03 10:39:32,learning,Learning 4/5,6,10,0,20,30,2,0.7,10,loss
+2025-05-03 10:39:39,learning,Learning 5/5,6,10,0,20,30,2,0.7,10,loss
+2025-05-03 10:45:15,learning,Learning 1/5,6,10,0,20,30,2,0.7,10,loss
+2025-05-03 10:45:24,learning,Learning 2/5,8,10,0,20,30,2,0.7,10,loss
