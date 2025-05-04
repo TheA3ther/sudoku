@@ -50,7 +50,7 @@ class DataLogger:
 class SudokuLogic:
     def __init__(self):
         # Initialize model path
-        self.model_path = Path("/Users/stalinjosephbaguio/Desktop/merge/model/models/sudoku_model_fixed.pkl")
+        self.model_path = Path("model/models/sudoku_model_fixed.pkl")
         os.makedirs(self.model_path.parent, exist_ok=True)
         
         # Game state variables
