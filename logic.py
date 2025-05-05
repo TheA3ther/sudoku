@@ -12,6 +12,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LinearRegression
 from datetime import datetime
+import sys
 
 class DataLogger:
     def __init__(self):
@@ -49,10 +50,22 @@ class DataLogger:
 
 class SudokuLogic:
     def __init__(self):
-        # Initialize model path
-        self.model_path = Path("model/models/sudoku_model_fixed.pkl")
-        os.makedirs(self.model_path.parent, exist_ok=True)
-        
+        # Determine the base directory relative to the executable
+        if getattr(sys, 'frozen', False):  # Running as a PyInstaller executable
+            self.base_dir = Path(os.path.dirname(sys.executable))
+        else:  # Running as a script
+            self.base_dir = Path.cwd()
+
+        self.save_path = self.base_dir / "progress.json"
+        self.model_path = self.base_dir / "model/models/sudoku_model_fixed.pkl"  # Initialize model_path
+        os.makedirs(self.save_path.parent, exist_ok=True)
+        os.makedirs(self.model_path.parent, exist_ok=True)  # Ensure model directory exists
+
+        # Ensure the progress.json file exists
+        if not self.save_path.exists():
+            self.save_path.write_text(json.dumps({'learning_games': [], 'adaptive_mode': False}))
+            print(f"Progress file created at: {self.save_path}")
+
         # Game state variables
         self.grid_size = 9
         self.full_grid = None
@@ -82,29 +95,25 @@ class SudokuLogic:
 
     def _load_progress(self):
         """Load saved progress automatically"""
-        save_path = Path(__file__).parent / "saves" / "progress.json"
-        if save_path.exists():
-            try:
-                with open(save_path, 'r') as f:
-                    data = json.load(f)
-                self.learning_games = data.get('learning_games', [])
-                self.adaptive_mode = data.get('adaptive_mode', False)
-                print(f"Loaded progress: {len(self.learning_games)} learning games, adaptive: {self.adaptive_mode}")
-            except Exception as e:
-                print(f"Error loading progress: {e}")
-                self.learning_games = []
-                self.adaptive_mode = False
+        try:
+            with open(self.save_path, 'r') as f:
+                data = json.load(f)
+            self.learning_games = data.get('learning_games', [])
+            self.adaptive_mode = data.get('adaptive_mode', False)
+            print(f"Loaded progress: {len(self.learning_games)} learning games, adaptive: {self.adaptive_mode}")
+        except Exception as e:
+            print(f"Error loading progress: {e}")
+            self.learning_games = []
+            self.adaptive_mode = False
 
     def save_progress(self):
         """Save progress to file"""
-        save_path = Path(__file__).parent / "saves" / "progress.json"
-        save_path.parent.mkdir(exist_ok=True)
         data = {
             'learning_games': self.learning_games,
             'adaptive_mode': self.adaptive_mode
         }
         try:
-            with open(save_path, 'w') as f:
+            with open(self.save_path, 'w') as f:
                 json.dump(data, f)
             print("Progress saved successfully")
         except Exception as e:
