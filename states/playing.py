@@ -93,7 +93,7 @@ class PlayingState(GameState):
 
     def next_game(self):
         self.game.logic.save_progress()
-        self.game.logic.next_game()
+        self.game.logic.reset_game()
         self.grid.initialize_grid()
         self.update_game_info()
         self.note_mode_text.text = "Note Mode: OFF"
@@ -178,6 +178,12 @@ class PlayingState(GameState):
         if self.game.logic.check_completion():
             # Show completion message
             self._show_completion_message()
+            
+            # Check if we just switched to adaptive mode
+            if len(self.game.logic.learning_games) == 5 and not self.game.logic.adaptive_mode:
+                self.adaptive_notice_text = "ADAPTIVE MODE ACTIVATED!"
+                self.adaptive_notice_time = time.time()
+                self.show_adaptive_notice = True
             
             # Log result and get next puzzle
             self.game.logic.log_game_result("win")

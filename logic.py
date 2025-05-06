@@ -311,30 +311,47 @@ class SudokuLogic:
         try:
             recent_games = self.learning_games[-5:]
             
-            # Prepare features
-            features = pd.DataFrame([{
-                'completion_time': np.mean([g['completion_time'] for g in recent_games]),
-                'mistakes': np.mean([g['mistakes'] for g in recent_games]),
-                'hints_used': np.mean([g['hints_used'] for g in recent_games]),
-                'moves': np.mean([g['moves'] for g in recent_games]),
-                'time_per_move': np.mean([g['completion_time']/(g['moves']+1e-6) for g in recent_games]),
-                'mistake_rate': np.mean([g['mistakes']/(g['completion_time']+1e-6) for g in recent_games]),
-                'hint_rate': np.mean([g['hints_used']/(g['completion_time']+1e-6) for g in recent_games])
-            }], columns=self.feature_columns)
+            # Calculate performance metrics
+            avg_time = np.mean([g['completion_time'] for g in recent_games])
+            avg_mistakes = np.mean([g['mistakes'] for g in recent_games])
+            avg_hints = np.mean([g['hints_used'] for g in recent_games])
+            avg_moves = np.mean([g['moves'] for g in recent_games])
             
-            # Preprocess and predict
-            features = self.feature_imputer.transform(features)
-            features_scaled = self.scaler.transform(features)
+            # Calculate performance scores (0-1 scale)
+            time_score = min(avg_time / 300, 1)  # 5 minutes max
+            mistake_score = min(avg_mistakes / 10, 1)  # 10 mistakes max
+            hint_score = min(avg_hints / 5, 1)  # 5 hints max
             
-            provided = np.clip(self.clues_model.predict(features_scaled)[0], 25, 45)
-            spread = np.clip(self.spread_model.predict(features_scaled)[0], 0.65, 0.95)
-            clusters = 1 if provided >= 35 else (2 if provided >= 25 else 3)
+            # Calculate overall performance (0 = worst, 1 = best)
+            performance = 1 - (0.5*time_score + 0.3*mistake_score + 0.2*hint_score)
             
+            # Adjust difficulty parameters based on performance
+            if performance > 0.8:  # Excellent performance
+                provided = max(20, 45 - int(performance * 25))
+                spread = 0.5
+                clusters = 3
+                max_mistakes = 8
+            elif performance > 0.6:  # Good performance
+                provided = max(25, 40 - int(performance * 15))
+                spread = 0.6
+                clusters = 2
+                max_mistakes = 10
+            elif performance > 0.4:  # Average performance
+                provided = 30
+                spread = 0.7
+                clusters = 2
+                max_mistakes = 12
+            else:  # Poor performance
+                provided = 35
+                spread = 0.8
+                clusters = 1
+                max_mistakes = 15
+                
             return {
-                'provided_numbers': int(provided),
-                'spread': float(spread),
+                'provided_numbers': provided,
+                'spread': spread,
                 'clusters': clusters,
-                'max_mistakes': max(5, 20 - int(provided)//3),
+                'max_mistakes': max_mistakes,
                 'label': self._get_difficulty_label(provided)
             }
         except Exception as e:
@@ -343,11 +360,19 @@ class SudokuLogic:
 
     def _get_difficulty_label(self, clues):
         """Convert clue count to difficulty label"""
-        if clues >= 35: return 'Beginner'
-        elif clues >= 30: return 'Easy'
-        elif clues >= 25: return 'Medium'
+        if clues >= 38: return 'Beginner'
+        elif clues >= 32: return 'Easy'
+        elif clues >= 26: return 'Medium'
         elif clues >= 20: return 'Hard'
         return 'Expert'
+
+    def _get_difficulty_label(self, clues):
+            """Convert clue count to difficulty label"""
+            if clues >= 38: return 'Beginner'
+            elif clues >= 34: return 'Easy'
+            elif clues >= 28: return 'Medium'
+            elif clues >= 22: return 'Hard'
+            return 'Expert'
 
     def reset_game(self):
         """Start a new game based on current mode"""
