@@ -184,6 +184,130 @@ class SudokuLogic:
         """Check if model is ready for predictions"""
         return self.model_loaded and len(self.learning_games) >= 5
 
+    def predict_difficulty(self):
+        """Predict optimal difficulty based on player performance (last 5 games)"""
+        if not self.is_model_available() or len(self.learning_games) < 5:
+            return None
+        
+        try:
+            recent_games = self.learning_games[-5:]
+            
+            # Calculate performance metrics (lower = better)
+            avg_time = np.mean([g['completion_time'] for g in recent_games])
+            avg_mistakes = np.mean([g['mistakes'] for g in recent_games])
+            avg_hints = np.mean([g['hints_used'] for g in recent_games])
+            
+            # Normalize scores (0-1, where 0 = best, 1 = worst)
+            time_score = min(avg_time / 300, 1)  # 5 minutes max
+            mistake_score = min(avg_mistakes / 15, 1)  # 15 mistakes max
+            hint_score = min(avg_hints / 5, 1)  # 5 hints max
+            
+            # Weighted performance (heavier penalty for mistakes & time)
+            performance = 0.6 * mistake_score + 0.3 * time_score + 0.1 * hint_score
+            
+            # Adjust difficulty parameters aggressively
+            if performance < 0.3:  # Excellent (few mistakes, fast)
+                provided = random.randint(22, 26)  # Hard-Expert
+                spread = 0.5
+                clusters = 3
+                max_mistakes = 8
+            elif performance < 0.6:  # Good
+                provided = random.randint(28, 32)  # Medium-Hard
+                spread = 0.6
+                clusters = 2
+                max_mistakes = 10
+            else:  # Average or worse
+                provided = random.randint(34, 38)  # Easy-Beginner
+                spread = 0.8
+                clusters = 1
+                max_mistakes = 15
+                
+            return {
+                'provided_numbers': provided,
+                'spread': spread,
+                'clusters': clusters,
+                'max_mistakes': max_mistakes,
+                'label': self._get_difficulty_label(provided)
+            }
+        except Exception as e:
+            print(f"❌ Prediction failed: {e}")
+            return None
+
+    def _get_difficulty_label(self, clues):
+        """Convert clue count to difficulty label"""
+        if clues >= 38: return 'Beginner'
+        elif clues >= 34: return 'Easy'
+        elif clues >= 28: return 'Medium'
+        elif clues >= 22: return 'Hard'
+        return 'Expert'
+
+    def reset_game(self):
+        """Start a new game based on current mode"""
+        if not self.model_loaded:
+            self._setup_fallback_game()
+        elif len(self.learning_games) < 5:
+            self._setup_learning_game()
+        else:
+            self._setup_adaptive_game()
+        self._reset_tracking()
+
+    def _setup_fallback_game(self):
+        """Default game when model isn't available"""
+        self.current_difficulty = {
+            'label': 'Medium',
+            'provided_numbers': 30,
+            'spread': 0.7,
+            'clusters': 2,
+            'max_mistakes': 10
+        }
+        self._generate_puzzle()
+
+    def _setup_learning_game(self):
+        """Medium difficulty games for initial learning phase"""
+        self.current_difficulty = {
+            'label': f'Learning {len(self.learning_games)+1}/5',
+            'provided_numbers': 30,
+            'spread': 0.7,
+            'clusters': 2,
+            'max_mistakes': 10
+        }
+        self._generate_puzzle()
+
+    def _setup_adaptive_game(self):
+        """Games with predicted difficulty after learning phase"""
+        params = self.predict_difficulty()
+        if params:
+            self.current_difficulty = {
+                'label': f'Adaptive: {params["label"]}',
+                'provided_numbers': params['provided_numbers'],
+                'spread': params['spread'],
+                'clusters': params['clusters'],
+                'max_mistakes': params['max_mistakes']
+            }
+        else:
+            self._setup_fallback_game()
+        self._generate_puzzle()
+
+    def _generate_puzzle(self):
+        """Generate the actual puzzle based on current difficulty"""
+        self.full_grid = self.generate_sudoku()
+        self.puzzle_grid = self.remove_numbers(
+            self.full_grid,
+            self.current_difficulty['provided_numbers']
+        )
+        self.user_grid = [row[:] for row in self.puzzle_grid]
+
+    def _reset_tracking(self):
+        """Reset game tracking variables"""
+        self.wrong_cells = set()
+        self.mistakes = 0
+        self.moves_made = 0
+        self.hints_used = 0
+        self.hints_remaining = self.max_hints
+        self.hint_cell = None
+        self.start_time = time.time()
+        self.game_over_time = None
+
     def generate_sudoku(self):
         """Generate a completed Sudoku grid with traditional structure"""
         grid = [[0 for _ in range(9)] for _ in range(9)]
@@ -302,144 +426,6 @@ class SudokuLogic:
                 if grid[i + start_row][j + start_col] == num and (i + start_row != row or j + start_col != col):
                     return False
         return True
-
-    def predict_difficulty(self):
-        """Predict optimal difficulty based on player performance"""
-        if not self.is_model_available() or len(self.learning_games) < 5:
-            return None
-            
-        try:
-            recent_games = self.learning_games[-5:]
-            
-            # Calculate performance metrics
-            avg_time = np.mean([g['completion_time'] for g in recent_games])
-            avg_mistakes = np.mean([g['mistakes'] for g in recent_games])
-            avg_hints = np.mean([g['hints_used'] for g in recent_games])
-            avg_moves = np.mean([g['moves'] for g in recent_games])
-            
-            # Calculate performance scores (0-1 scale)
-            time_score = min(avg_time / 300, 1)  # 5 minutes max
-            mistake_score = min(avg_mistakes / 10, 1)  # 10 mistakes max
-            hint_score = min(avg_hints / 5, 1)  # 5 hints max
-            
-            # Calculate overall performance (0 = worst, 1 = best)
-            performance = 1 - (0.5*time_score + 0.3*mistake_score + 0.2*hint_score)
-            
-            # Adjust difficulty parameters based on performance
-            if performance > 0.8:  # Excellent performance
-                provided = max(20, 45 - int(performance * 25))
-                spread = 0.5
-                clusters = 3
-                max_mistakes = 8
-            elif performance > 0.6:  # Good performance
-                provided = max(25, 40 - int(performance * 15))
-                spread = 0.6
-                clusters = 2
-                max_mistakes = 10
-            elif performance > 0.4:  # Average performance
-                provided = 30
-                spread = 0.7
-                clusters = 2
-                max_mistakes = 12
-            else:  # Poor performance
-                provided = 35
-                spread = 0.8
-                clusters = 1
-                max_mistakes = 15
-                
-            return {
-                'provided_numbers': provided,
-                'spread': spread,
-                'clusters': clusters,
-                'max_mistakes': max_mistakes,
-                'label': self._get_difficulty_label(provided)
-            }
-        except Exception as e:
-            print(f"❌ Prediction failed: {e}")
-            return None
-
-    def _get_difficulty_label(self, clues):
-        """Convert clue count to difficulty label"""
-        if clues >= 38: return 'Beginner'
-        elif clues >= 32: return 'Easy'
-        elif clues >= 26: return 'Medium'
-        elif clues >= 20: return 'Hard'
-        return 'Expert'
-
-    def _get_difficulty_label(self, clues):
-            """Convert clue count to difficulty label"""
-            if clues >= 38: return 'Beginner'
-            elif clues >= 34: return 'Easy'
-            elif clues >= 28: return 'Medium'
-            elif clues >= 22: return 'Hard'
-            return 'Expert'
-
-    def reset_game(self):
-        """Start a new game based on current mode"""
-        if not self.model_loaded:
-            self._setup_fallback_game()
-        elif len(self.learning_games) < 5:
-            self._setup_learning_game()
-        else:
-            self._setup_adaptive_game()
-        self._reset_tracking()
-
-    def _setup_fallback_game(self):
-        """Default game when model isn't available"""
-        self.current_difficulty = {
-            'label': 'Medium',
-            'provided_numbers': 30,
-            'spread': 0.7,
-            'clusters': 2,
-            'max_mistakes': 10
-        }
-        self._generate_puzzle()
-
-    def _setup_learning_game(self):
-        """Medium difficulty games for initial learning phase"""
-        self.current_difficulty = {
-            'label': f'Learning {len(self.learning_games)+1}/5',
-            'provided_numbers': 30,
-            'spread': 0.7,
-            'clusters': 2,
-            'max_mistakes': 10
-        }
-        self._generate_puzzle()
-
-    def _setup_adaptive_game(self):
-        """Games with predicted difficulty after learning phase"""
-        params = self.predict_difficulty()
-        if params:
-            self.current_difficulty = {
-                'label': f'Adaptive: {params["label"]}',
-                'provided_numbers': params['provided_numbers'],
-                'spread': params['spread'],
-                'clusters': params['clusters'],
-                'max_mistakes': params['max_mistakes']
-            }
-        else:
-            self._setup_fallback_game()
-        self._generate_puzzle()
-
-    def _generate_puzzle(self):
-        """Generate the actual puzzle based on current difficulty"""
-        self.full_grid = self.generate_sudoku()
-        self.puzzle_grid = self.remove_numbers(
-            self.full_grid,
-            self.current_difficulty['provided_numbers']
-        )
-        self.user_grid = [row[:] for row in self.puzzle_grid]
-
-    def _reset_tracking(self):
-        """Reset game tracking variables"""
-        self.wrong_cells = set()
-        self.mistakes = 0
-        self.moves_made = 0
-        self.hints_used = 0
-        self.hints_remaining = self.max_hints
-        self.hint_cell = None
-        self.start_time = time.time()
-        self.game_over_time = None
 
     def check_move(self, row, col, num):
         """Validate a player's move"""
